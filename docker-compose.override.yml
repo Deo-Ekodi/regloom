@@ -1,0 +1,9 @@
+services:
+  frontend:
+    command: pnpm dev
+  backend:
+    command: pnpm dev
+  privacy-engine:
+    command: pnpm dev
+  rule-engine:
+    command: pnpm dev

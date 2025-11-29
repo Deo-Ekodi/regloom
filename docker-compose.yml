@@ -1,0 +1,52 @@
+services:
+  db:
+    image: supabase/postgres:15.1.1.43
+    ports: ["54321:5432"]
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+      target: dev
+    ports: ["3000:3000"]
+    volumes: ["./apps/frontend:/app"]
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    depends_on: [db]
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+      target: dev
+    ports: ["4000:4000"]
+    volumes: ["./apps/backend:/app"]
+    environment:
+      - NODE_ENV=development
+    depends_on: [db]
+
+  privacy-engine:
+    build:
+      context: .
+      dockerfile: apps/privacy-engine/Dockerfile
+      target: dev
+    volumes: ["./apps/privacy-engine:/app"]
+
+  rule-engine:
+    build:
+      context: .
+      dockerfile: apps/rule-engine/Dockerfile
+      target: dev
+    volumes: ["./apps/rule-engine:/app"]
+
+  synth-gen:
+    build:
+      context: .
+      dockerfile: apps/synth-gen/Dockerfile
+
+volumes:
+  db_data:
