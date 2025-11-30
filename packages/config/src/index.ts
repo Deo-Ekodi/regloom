@@ -1,1 +1,1 @@
-// config
+// Shared config package — TODO: implement

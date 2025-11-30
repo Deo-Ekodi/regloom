@@ -1,1 +1,1 @@
-// types
+// Shared types package — TODO: implement

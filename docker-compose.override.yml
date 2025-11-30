@@ -1,9 +1,12 @@
 services:
   frontend:
-    command: pnpm dev
+    command: pnpm --filter @regloom/frontend dev
   backend:
-    command: pnpm dev
+    command: pnpm --filter @regloom/backend dev
   privacy-engine:
-    command: pnpm dev
+    command: pnpm --filter @regloom/privacy-engine dev
   rule-engine:
-    command: pnpm dev
+    command: pnpm --filter @regloom/rule-engine dev
+  synth-gen:
+    # FIX: Use tail -f /dev/null to keep the Python dev container running
+    command: tail -f /dev/null

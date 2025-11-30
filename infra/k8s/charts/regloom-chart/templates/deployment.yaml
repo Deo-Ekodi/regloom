@@ -1,0 +1,20 @@
+# Placeholder Helm deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: regloom
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: regloom
+  template:
+    metadata:
+      labels:
+        app: regloom
+    spec:
+      containers:
+        - name: regloom
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports:
+            - containerPort: 80

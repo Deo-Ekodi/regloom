@@ -1,0 +1,9 @@
+# Prometheus configuration for RegLoom services
+# TODO: Configure scrape jobs for each service
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

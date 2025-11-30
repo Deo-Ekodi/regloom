@@ -1,0 +1,8 @@
+# Helm values for RegLoom deployment
+replicaCount: 1
+image:
+  repository: railway.app/regloom
+  tag: latest
+service:
+  type: ClusterIP
+  port: 80
