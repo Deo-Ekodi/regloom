@@ -1,35 +1,34 @@
+# apps/backend/Dockerfile
 FROM node:20-alpine AS base
-RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
+COPY tsconfig.json ./
+
+# Copy workspace config
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/backend/package.json ./apps/backend/package.json
-RUN pnpm install --recursive --frozen-lockfile --production=false
+COPY packages ./packages
+
+# Install everything (including shared packages)
+RUN pnpm install --recursive --frozen-lockfile
 
 FROM base AS builder
 COPY . .
-WORKDIR /app/apps/backend
-RUN pnpm build
+RUN pnpm --filter @regloom/backend build
 
-# DEV STAGE: Fixes bin path issue
+# DEV STAGE — HOT RELOAD WORKING
 FROM node:20-alpine AS dev
-RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
-# Copy necessary node_modules structure for running dev scripts from base
+
 COPY --from=base /app/node_modules ./node_modules
-COPY --from=base /app/pnpm-workspace.yaml .
-COPY apps/backend/package.json ./apps/backend/package.json
-COPY packages ./packages
-COPY apps/backend ./apps/backend
+COPY --from=base /app/packages ./packages
+COPY --from=base /app/tsconfig.json ./tsconfig.json
+COPY --from=base /app/pnpm-workspace.yaml ./
+COPY --from=base /app/apps/backend ./apps/backend
 
-# The command is now handled by docker-compose.override.yml and runs from /app
-CMD ["tail", "-f", "/dev/null"] 
+# Ensure ts-node can resolve .ts files from shared packages
+ENV NODE_OPTIONS="--loader ts-node/esm --no-warnings"
 
-# Use a placeholder command here, as the actual run command is in override for hot-reload
-# The volumes mount the app code directly, making the previous COPY steps mainly for build context.
-
-FROM builder AS prod
-WORKDIR /app
-COPY --from=builder /app/apps/backend/dist ./dist
-COPY --from=base /app/node_modules ./node_modules
-# FIX: The Express server is the long-running process
-CMD ["node", "dist/index.js"]
+# Let docker-compose.override.yml run the correct pnpm dev command
+CMD ["tail", "-f", "/dev/null"]

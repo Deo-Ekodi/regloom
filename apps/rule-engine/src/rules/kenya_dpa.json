@@ -1,0 +1,141 @@
+{
+    "rules": [
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "national_id",
+                        "operator": "notEqual",
+                        "value": null
+                    },
+                    {
+                        "fact": "dpa_consent",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "kenya_dpa_violation",
+                "params": {
+                    "message": "National ID processed without explicit consent",
+                    "section": "25"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "ethnic_origin",
+                        "operator": "notEqual",
+                        "value": null
+                    },
+                    {
+                        "fact": "kenya_dpa_sensitive_consent",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "kenya_dpa_violation",
+                "params": {
+                    "message": "Ethnic origin (sensitive data) processed without consent",
+                    "section": "45"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "political_opinion",
+                        "operator": "notEqual",
+                        "value": null
+                    },
+                    {
+                        "fact": "kenya_dpa_sensitive_consent",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "kenya_dpa_violation",
+                "params": {
+                    "message": "Political opinion processed without consent",
+                    "section": "45"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "data_transfer_international",
+                        "operator": "equal",
+                        "value": true
+                    },
+                    {
+                        "fact": "kenya_dpa_cross_border_approval",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "kenya_dpa_violation",
+                "params": {
+                    "message": "International data transfer without ODPC approval",
+                    "section": "48"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "m_pesa_transaction_id",
+                        "operator": "notEqual",
+                        "value": null
+                    },
+                    {
+                        "fact": "kenya_dpa_financial_consent",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "kenya_dpa_violation",
+                "params": {
+                    "message": "M-Pesa transaction data processed without consent"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "health_records",
+                        "operator": "equal",
+                        "value": true
+                    },
+                    {
+                        "fact": "kenya_dpa_sensitive_consent",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "kenya_dpa_violation",
+                "params": {
+                    "message": "Health records processed without explicit consent",
+                    "section": "45"
+                }
+            }
+        }
+    ]
+}

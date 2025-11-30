@@ -1,12 +1,16 @@
+# docker-compose.override.yml
 services:
   frontend:
     command: pnpm --filter @regloom/frontend dev
+
   backend:
     command: pnpm --filter @regloom/backend dev
-  privacy-engine:
-    command: pnpm --filter @regloom/privacy-engine dev
+
   rule-engine:
     command: pnpm --filter @regloom/rule-engine dev
+
+  privacy-engine:
+    command: pnpm --filter @regloom/privacy-engine dev
+
   synth-gen:
-    # FIX: Use tail -f /dev/null to keep the Python dev container running
     command: tail -f /dev/null

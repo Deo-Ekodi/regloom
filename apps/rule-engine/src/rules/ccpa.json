@@ -1,0 +1,117 @@
+{
+    "rules": [
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "phone",
+                        "operator": "notEqual",
+                        "value": null
+                    },
+                    {
+                        "fact": "ccpa_opt_out",
+                        "operator": "equal",
+                        "value": true
+                    }
+                ]
+            },
+            "event": {
+                "type": "ccpa_violation",
+                "params": {
+                    "message": "Phone data present despite CCPA sale opt-out",
+                    "section": "1798.120"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "email",
+                        "operator": "notEqual",
+                        "value": null
+                    },
+                    {
+                        "fact": "ccpa_opt_out",
+                        "operator": "equal",
+                        "value": true
+                    }
+                ]
+            },
+            "event": {
+                "type": "ccpa_violation",
+                "params": {
+                    "message": "Email used for sale despite opt-out"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "ip_address",
+                        "operator": "notEqual",
+                        "value": null
+                    },
+                    {
+                        "fact": "ccpa_opt_out",
+                        "operator": "equal",
+                        "value": true
+                    }
+                ]
+            },
+            "event": {
+                "type": "ccpa_violation",
+                "params": {
+                    "message": "IP address inferred as personal info and sold despite opt-out"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "has_financial_data",
+                        "operator": "equal",
+                        "value": true
+                    },
+                    {
+                        "fact": "ccpa_financial_disclosure",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "ccpa_violation",
+                "params": {
+                    "message": "Financial data collected without proper disclosure",
+                    "section": "1798.130"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "is_minor",
+                        "operator": "equal",
+                        "value": true
+                    },
+                    {
+                        "fact": "ccpa_minor_opt_in",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "ccpa_violation",
+                "params": {
+                    "message": "Selling data of minor without affirmative authorization",
+                    "section": "1798.120(d)"
+                }
+            }
+        }
+    ]
+}

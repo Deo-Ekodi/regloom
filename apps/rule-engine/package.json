@@ -3,16 +3,28 @@
   "private": true,
   "main": "dist/index.js",
   "scripts": {
-    "dev": "ts-node-dev src/index.ts",
-    "build": "tsc --build tsconfig.build.json"
+    "dev": "ts-node-dev --respawn --poll --transpile-only --ignore-watch node_modules --project /app/tsconfig.json src/index.ts",
+    "build": "tsc --build tsconfig.build.json",
+    "test": "jest"
   },
   "dependencies": {
+    "@regloom/types": "workspace:*",
+    "@regloom/utils": "workspace:*",
+    "@supabase/supabase-js": "latest",
+    "dotenv": "^17.2.3",
     "express": "latest",
-    "@supabase/supabase-js": "latest"
+    "json-rules-engine": "^7.3.1"
   },
   "devDependencies": {
-    "typescript": "latest",
+    "@faker-js/faker": "8.4.1",
+    "@types/cli-progress": "^3.11.6",
+    "@types/express": "^5.0.5",
+    "@types/jest": "^30.0.0",
+    "cli-progress": "^3.12.0",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5",
     "ts-node": "latest",
-    "ts-node-dev": "latest"
+    "ts-node-dev": "latest",
+    "typescript": "latest"
   }
 }

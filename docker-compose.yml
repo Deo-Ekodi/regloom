@@ -48,6 +48,8 @@ services:
       context: .
       dockerfile: apps/rule-engine/Dockerfile
       target: dev
+    ports:
+      - "4001:4001"
     volumes: 
       - ./apps/rule-engine:/app/apps/rule-engine
       - /app/apps/rule-engine/node_modules

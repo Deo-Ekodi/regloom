@@ -1,1 +1,2 @@
-// Shared utils package — TODO: implement
+// Entry point for utils package exports.
+export * from './logger';

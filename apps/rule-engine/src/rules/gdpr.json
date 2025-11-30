@@ -1,0 +1,213 @@
+{
+    "rules": [
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "email",
+                        "operator": "notEqual",
+                        "value": null
+                    },
+                    {
+                        "fact": "gdpr_consent",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "gdpr_violation",
+                "params": {
+                    "message": "Email (PII) present without explicit GDPR consent",
+                    "field": "email",
+                    "article": "6(1)(a)"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "phone",
+                        "operator": "notEqual",
+                        "value": null
+                    },
+                    {
+                        "fact": "gdpr_consent",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "gdpr_violation",
+                "params": {
+                    "message": "Phone number (PII) present without GDPR consent",
+                    "field": "phone",
+                    "article": "6(1)(a)"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "name",
+                        "operator": "notEqual",
+                        "value": null
+                    },
+                    {
+                        "fact": "gdpr_consent",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "gdpr_violation",
+                "params": {
+                    "message": "Full name (PII) present without consent",
+                    "field": "name"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "location_data",
+                        "operator": "equal",
+                        "value": true
+                    },
+                    {
+                        "fact": "gdpr_location_consent",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "gdpr_violation",
+                "params": {
+                    "message": "Precise geolocation processed without explicit consent",
+                    "article": "6(1)(a), 9"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "is_child",
+                        "operator": "equal",
+                        "value": true
+                    },
+                    {
+                        "fact": "parental_consent_verified",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "gdpr_violation",
+                "params": {
+                    "message": "Processing data of child under 16 without verified parental consent",
+                    "article": "8"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "health_data",
+                        "operator": "equal",
+                        "value": true
+                    },
+                    {
+                        "fact": "gdpr_explicit_consent",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "gdpr_violation",
+                "params": {
+                    "message": "Special category data (health) processed without explicit consent",
+                    "article": "9(2)(a)"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "biometric_data",
+                        "operator": "equal",
+                        "value": true
+                    },
+                    {
+                        "fact": "gdpr_explicit_consent",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "gdpr_violation",
+                "params": {
+                    "message": "Biometric data processed without explicit consent",
+                    "article": "9(2)(a)"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "all": [
+                    {
+                        "fact": "data_transfer_outside_eea",
+                        "operator": "equal",
+                        "value": true
+                    },
+                    {
+                        "fact": "has_scc_or_bcr",
+                        "operator": "equal",
+                        "value": false
+                    }
+                ]
+            },
+            "event": {
+                "type": "gdpr_violation",
+                "params": {
+                    "message": "Data transferred outside EEA without SCCs or BCRs",
+                    "article": "46"
+                }
+            }
+        },
+        {
+            "conditions": {
+                "any": [
+                    {
+                        "fact": "retention_days",
+                        "operator": "greaterThan",
+                        "value": 730
+                    },
+                    {
+                        "fact": "purpose_achieved",
+                        "operator": "equal",
+                        "value": true
+                    }
+                ]
+            },
+            "event": {
+                "type": "gdpr_violation",
+                "params": {
+                    "message": "Data retained longer than necessary",
+                    "article": "5(1)(e)"
+                }
+            }
+        }
+    ]
+}

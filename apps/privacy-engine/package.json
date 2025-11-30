@@ -3,16 +3,19 @@
   "private": true,
   "main": "dist/index.js",
   "scripts": {
-    "dev": "ts-node-dev src/index.ts",
-    "build": "tsc --build tsconfig.build.json"
+    "dev": "ts-node-dev --respawn --poll --transpile-only --ignore-watch node_modules --project /app/tsconfig.json src/index.ts",
+    "build": "tsc --build tsconfig.build.json",
+    "test": "jest"
   },
   "dependencies": {
-    "express": "latest",
-    "@supabase/supabase-js": "latest"
+    "@supabase/supabase-js": "latest",
+    "express": "latest"
   },
   "devDependencies": {
-    "typescript": "latest",
+    "@types/express": "^5.0.5",
+    "@types/jest": "^30.0.0",
     "ts-node": "latest",
-    "ts-node-dev": "latest"
+    "ts-node-dev": "latest",
+    "typescript": "latest"
   }
 }
