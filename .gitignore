@@ -9,4 +9,3 @@ venv
 supabase
 .docker
 .DS_Store
-.vscode
