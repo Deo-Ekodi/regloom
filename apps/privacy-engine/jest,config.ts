@@ -2,33 +2,32 @@
 import type { Config } from 'jest';
 
 const config: Config = {
+    preset: 'ts-jest',
     testEnvironment: 'node',
     clearMocks: true,
-
+    collectCoverage: false,
     roots: ['<rootDir>/tests'],
     testMatch: ['**/*.test.ts'],
-
-    // THIS IS THE ONLY TRANSFORM JEST WILL USE
-    transform: {
-        '^.+\\.ts$': ['ts-jest', {
-            useESM: false,
-            tsconfig: '<rootDir>/../../tsconfig.json',
-            isolatedModules: true,
-        }],
-    },
-
-    // Force CommonJS – critical
-    extensionsToTreatAsEsm: [],
-
-    moduleFileExtensions: ['ts', 'js', 'json', 'node'],
-
+    modulePaths: ['<rootDir>/src'],
     moduleNameMapper: {
         '^@regloom/(.*)$': '<rootDir>/../../packages/$1/src',
     },
-
-    // Optional but nice
-    verbose: false,
-    collectCoverage: false,
+    transform: {
+        '^.+\\.ts$': ['ts-jest', { useESM: false }],
+    },
+    extensionsToTreatAsEsm: [],
+    globals: {
+        'ts-jest': {
+            useESM: false,
+            tsconfig: '<rootDir>/../../tsconfig.json',
+            isolatedModules: true,
+            astTransformers: {
+                before: [],
+            },
+        },
+    },
+    verbose: true,
+    injectGlobals: true,
 };
 
 export default config;

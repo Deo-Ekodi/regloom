@@ -6,6 +6,8 @@ services:
       POSTGRES_PASSWORD: postgres
     volumes:
       - db_data:/var/lib/postgresql/data
+    logging:
+      driver: "none"
 
   frontend:
     build:
@@ -65,3 +67,4 @@ services:
 
 volumes:
   db_data:
+  logs:

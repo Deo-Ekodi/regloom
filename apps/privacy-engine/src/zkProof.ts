@@ -11,9 +11,10 @@ import fs from 'fs/promises';
 import path from 'path';
 import { logger } from '@regloom/utils';
 
-const ZKEY_PATH = path.join(__dirname, '../../artifacts/multiplier_final.zkey');
-const WASM_PATH = path.join(__dirname, '../../artifacts/multiplier.wasm');
-const VK_PATH = path.join(__dirname, '../../artifacts/verification_key.json');
+const ARTIFACTS_DIR = path.join(__dirname, '../artifacts');
+const WASM_PATH = path.join(ARTIFACTS_DIR, 'multiplier_js/multiplier.wasm');
+const ZKEY_PATH = path.join(ARTIFACTS_DIR, 'multiplier_final.zkey');
+const VK_PATH = path.join(ARTIFACTS_DIR, 'verification_key.json');
 
 export async function proveCompliance(a: bigint, b: bigint, c: bigint): Promise<{ proof: any; publicSignals: string[] }> {
     try {

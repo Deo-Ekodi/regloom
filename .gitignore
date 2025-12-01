@@ -14,3 +14,5 @@ apps/privacy-engine/keys/
 apps/privacy-engine/artifacts/
 
 **.ptau
+logs/
+!logs/.gitkeep

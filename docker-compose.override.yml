@@ -1,16 +1,52 @@
 # docker-compose.override.yml
 services:
   frontend:
+    volumes:
+      - ./apps/frontend:/app/apps/frontend
+      - /app/apps/frontend/node_modules
+      - ./logs:/logs
+    environment:
+      - SERVICE_NAME=frontend
+      - LOG_LEVEL=debug
+      - LOG_DIR=/logs
+      - NODE_ENV=development
     command: pnpm --filter @regloom/frontend dev
-
   backend:
-    command: pnpm --filter @regloom/backend dev
-
-  rule-engine:
-    command: pnpm --filter @regloom/rule-engine dev
-
+    volumes:
+      - ./apps/backend:/app/apps/backend
+      - /app/apps/backend/node_modules
+      - ./logs:/logs
+    environment:
+      - SERVICE_NAME=backend
+      - LOG_LEVEL=debug
+      - LOG_DIR=/logs
+      - NODE_ENV=development
   privacy-engine:
-    command: pnpm --filter @regloom/privacy-engine dev
-
+    volumes:
+      - ./apps/privacy-engine:/app/apps/privacy-engine
+      - /app/apps/privacy-engine/node_modules
+      - ./logs:/logs
+    environment:
+      - SERVICE_NAME=privacy-engine
+      - LOG_LEVEL=debug
+      - LOG_DIR=/logs
+      - NODE_ENV=development
+  rule-engine:
+    volumes:
+      - ./apps/rule-engine:/app/apps/rule-engine
+      - /app/apps/rule-engine/node_modules
+      - ./logs:/logs
+    environment:
+      - SERVICE_NAME=rule-engine
+      - LOG_LEVEL=debug
+      - LOG_DIR=/logs
+      - NODE_ENV=development
   synth-gen:
-    command: tail -f /dev/null
+    volumes:
+      - ./apps/synth-gen:/app/apps/synth-gen
+      - ./logs:/logs
+    environment:
+      - SERVICE_NAME=synth-gen
+      - LOG_LEVEL=debug
+      - LOG_DIR=/logs
+      - NODE_ENV=development

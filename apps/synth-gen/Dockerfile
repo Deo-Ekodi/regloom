@@ -1,26 +1,33 @@
-# BUILDER STAGE: Handle dependencies (cache layer)
+# BUILDER STAGE
 FROM python:3.12-slim AS builder
 WORKDIR /app
-# Install build tools
-RUN pip install poetry || pip install setuptools wheel
-# Copy dependency files only
-COPY apps/synth-gen/pyproject.toml /app/apps/synth-gen/
-# Install dependencies from pyproject.toml (will succeed even if empty)
-# Use a temporary directory to treat it as an installable package
+
+# Install poetry if needed (fallback to pip)
+RUN pip install --no-cache-dir poetry || pip install --no-cache-dir setuptools wheel
+
+# Copy pyproject.toml
+COPY apps/synth-gen/pyproject.toml ./apps/synth-gen/
 WORKDIR /app/apps/synth-gen
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir . || true  # ignore if no deps
 
-# DEV STAGE: Full environment for development
-FROM builder AS dev
+# DEV STAGE — FULL WORKSPACE + LOGGING
+FROM python:3.12-slim AS dev
 WORKDIR /app
-# Copy the entire workspace structure
-COPY . . 
-# Set environment variable for unbuffered output
-ENV PYTHONUNBUFFERED=1
-# Use a placeholder command, actual run command is in docker-compose.override.yml
-CMD ["tail", "-f", "/dev/null"] 
 
-# PROD STAGE: Minimal runtime (defined for completeness)
-FROM dev AS prod
-# FIX: Use tail -f /dev/null here as well, unless a proper server is implemented
+# Critical: Create /logs directory and allow writes
+RUN mkdir -p /logs && \
+    chown -R nobody:nogroup /logs && \
+    chmod 777 /logs
+
+# Use non-root user (standard in slim images)
+USER nobody
+
+# Copy full project
+COPY --chown=nobody:nogroup . .
+
+# Ensure Python output is unbuffered
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Keep container alive — command overridden by docker-compose
 CMD ["tail", "-f", "/dev/null"]

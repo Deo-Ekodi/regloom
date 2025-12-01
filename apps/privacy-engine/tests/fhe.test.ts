@@ -1,7 +1,11 @@
-// fhe.test.ts
+// apps/privacy-engine/tests/fhe.test.ts
 import { encryptPII, decryptPII, encryptNumber, decryptNumber } from '../src/fhe';
 
 describe('FHE Encryption/Decryption', () => {
+    afterEach(async () => {
+        jest.resetModules();
+    });
+
     it('encrypts and decrypts string PII', async () => {
         const pii = 'user@example.com';
         const encrypted = await encryptPII(pii);

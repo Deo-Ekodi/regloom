@@ -2,6 +2,11 @@
 FROM node:20-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
+
+RUN mkdir -p /logs /app/apps/privacy-engine && \
+    chown -R node:node /logs /app/apps/privacy-engine /app
+USER node
+
 COPY tsconfig.json ./
 
 # Copy workspace config

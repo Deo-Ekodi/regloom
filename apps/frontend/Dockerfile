@@ -1,34 +1,37 @@
+# BUILDER STAGE
 FROM node:20-alpine AS builder
-# Use correct pnpm versioning for corepack
 RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
 WORKDIR /app
-# Copy lockfile and workspace config (caching layer 1)
+
+# Copy workspace + lockfiles
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-# Copy app package.json (caching layer 2)
 COPY apps/frontend/package.json ./apps/frontend/package.json
-# Install all dependencies at the root
+
+# Install all deps
 RUN pnpm install --recursive --frozen-lockfile --production=false
-# Copy source code
+
+# Copy source + build
 COPY . .
-# Build step for production builder
 RUN pnpm --filter @regloom/frontend build
 
-# DEV STAGE: Fixes bin path issue
+# DEV STAGE — HOT RELOAD + LOGGING
 FROM node:20-alpine AS dev
-# Activate pnpm and set up path
 RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
 WORKDIR /app
-# Copy node_modules from builder for executables
+
+# Critical: Create /logs and give node user write access
+RUN mkdir -p /logs && chown -R node:node /logs
+VOLUME /logs
+
+# Run as non-root (safe + matches other services)
+USER node
+
+# Copy dependencies and source
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/pnpm-workspace.yaml .
-COPY apps/frontend/package.json ./apps/frontend/package.json
-COPY packages ./packages
-COPY apps/frontend ./apps/frontend
+COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/apps/frontend ./apps/frontend
+COPY --from=builder /app/package.json ./
 
-# Set up the run command, using pnpm filter is safer than just 'vite'
-WORKDIR /app 
+# Vite dev server
 CMD ["pnpm", "--filter", "@regloom/frontend", "dev"]
-
-FROM nginx:alpine AS prod
-COPY --from=builder /app/apps/frontend/dist /usr/share/nginx/html
-EXPOSE 80
