@@ -1,4 +1,4 @@
-# apps/privacy-engine/Dockerfile 
+# apps/privacy-engine/Dockerfile
 FROM node:20-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app

@@ -9,11 +9,19 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "latest",
-    "express": "latest"
+    "circomlibjs": "^0.1.7",
+    "express": "latest",
+    "node-tfhe": "^1.4.2",
+    "snarkjs": "^0.7.5"
   },
   "devDependencies": {
     "@types/express": "^5.0.5",
     "@types/jest": "^30.0.0",
+    "@types/node": "^24.10.1",
+    "@types/snarkjs": "^0.7.9",
+    "jest": "^30.2.0",
+    "supertest": "^7.1.4",
+    "ts-jest": "^29.4.5",
     "ts-node": "latest",
     "ts-node-dev": "latest",
     "typescript": "latest"

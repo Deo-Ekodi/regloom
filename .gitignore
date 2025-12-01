@@ -9,3 +9,8 @@ venv
 supabase
 .docker
 .DS_Store
+
+apps/privacy-engine/keys/
+apps/privacy-engine/artifacts/
+
+**.ptau

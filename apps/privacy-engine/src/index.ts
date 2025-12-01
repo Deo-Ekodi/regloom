@@ -1,12 +1,8 @@
-import express from 'express';
+/**
+ * Privacy Engine entry point.
+ * Exports FHE, ZK, and audit functions for data privacy operations.
+ */
 
-const app = express();
-const PORT = 4000; // Using a fixed port for simplicity, backend service maps 4000:4000
-
-app.get('/', (req, res) => {
-  res.send('privacy-engine service is alive!');
-});
-
-app.listen(PORT, () => {
-  console.log(`privacy-engine service is running on port ${PORT}`);
-});
+export * from './fhe';
+export * from './zkProof';
+export * from './audit_oracle';

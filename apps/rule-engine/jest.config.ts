@@ -13,9 +13,7 @@ const config: Config = {
     transform: {
         '^.+\\.ts$': ['ts-jest', { useESM: false }],
     },
-    // THIS IS THE NUCLEAR FIX
     extensionsToTreatAsEsm: [],
-    // Add this to force Jest to recognize Jest globals in TS
     globals: {
         'ts-jest': {
             useESM: false,
@@ -24,10 +22,7 @@ const config: Config = {
             },
         },
     },
-    // Remove setupFilesAfterEnv completely — it's the source of evil
-    // setupFilesAfterEnv: [],
     verbose: true,
-    // THIS IS THE KEY: Force Jest to inject globals
     injectGlobals: true,
 };
 

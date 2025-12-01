@@ -14,8 +14,8 @@ services:
       target: dev
     ports: ["3000:3000"]
     volumes: 
-      - ./apps/frontend:/app/apps/frontend # Map app to its correct location
-      - /app/apps/frontend/node_modules    # Prevent masking of deps
+      - ./apps/frontend:/app/apps/frontend
+      - /app/apps/frontend/node_modules
       - ./.env.example:/app/.env.example
     environment:
       - CHOKIDAR_USEPOLLING=true
@@ -29,7 +29,7 @@ services:
     ports: ["4000:4000"]
     volumes: 
       - ./apps/backend:/app/apps/backend
-      - /app/apps/backend/node_modules     # Prevent masking of deps
+      - /app/apps/backend/node_modules
     environment:
       - NODE_ENV=development
     depends_on: [db]
