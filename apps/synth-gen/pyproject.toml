@@ -1,8 +1,42 @@
-[project]
+[tool.poetry]
 name = "synth-gen"
 version = "0.1.0"
-dependencies = []
+description = "Synthetic data generation service for RegLoom, handling AI-compliant data weaving with GAN-based synthesis and anomaly detection."
+authors = ["RegLoom Team <info@regloom.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "src", from = "."}]
+
+[tool.poetry.dependencies]
+python = "^3.12,<3.13"
+tensorflow = "^2.16.2"
+numpy = "^1.26.4"
+pandas = "^2.2.2"
+scikit-learn = "^1.5.0"
+ctgan = "^0.10.1"
+presidio-analyzer = "^2.2.356"
+presidio-anonymizer = "^2.2.356"
+fairlearn = "^0.10.0"
+structlog = "^24.4.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.3"
+black = "^24.8.0"
+mypy = "^1.11.2"
+ruff = "^0.6.5"
 
 [build-system]
-requires = ["setuptools>=61.0.0"]
-build-backend = "setuptools.build_meta"
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 120
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 120
+select = ["E", "F", "I", "N", "D", "UP", "YTT", "S", "BLE", "B", "A", "COM", "C4", "DTZ", "T10", "EM", "EXE", "FA", "ISC", "ICN", "G", "INP", "PIE", "T20", "PT", "Q", "RSE", "RET", "SLF", "SIM", "TID", "TCH", "INT", "ARG", "PTH", "TD", "FIX", "ERA", "PD", "PGH", "PL", "TRY", "FLY", "NPY", "AIR", "PERF", "FURB", "LOG", "RUF"]
+ignore = ["D203", "D213"]
