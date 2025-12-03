@@ -1,6 +1,11 @@
+// packages/utils/src/logger.ts
 import winston, { format, transports, Logger as WinstonLogger, Logform } from 'winston';
 import path from 'path';
 import fs from 'fs';
+import { AsyncLocalStorage } from 'async_hooks';
+
+export const asyncLocalStorage = new AsyncLocalStorage<{ requestId?: string }>();
+
 const isProd = process.env.NODE_ENV === 'production';
 const isTest = process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined;
 const isDev = !isProd && !isTest;
@@ -10,22 +15,40 @@ const logLevel = process.env.LOG_LEVEL || (isDev ? DEFAULT_DEV_LEVEL : DEFAULT_P
 // -------------------------------
 // LOG DIRECTORY SETUP (SKIPPED ON TESTS)
 // -------------------------------
-const LOG_DIR = process.env.LOG_DIR || './logs';
-let filename;
+const LOG_DIR = process.env.LOG_DIR || '/logs';   // <- critical: default to /logs in container
+
+let filename: string | undefined;
+
 if (!isTest) {
+    // ALWAYS ensure the directory exists and is writable - ignore errors (common in Docker)
     try {
-        if (!fs.existsSync(LOG_DIR)) {
-            fs.mkdirSync(LOG_DIR, { recursive: true });
-        }
-    } catch (err) {
-        console.error('Failed to create log directory:', LOG_DIR, err);
+        fs.mkdirSync(LOG_DIR, { recursive: true });
+    } catch { } // eslint-disable-line no-empty
+
+    const service = process.env.SERVICE_NAME || 'app';
+    filename = path.join(LOG_DIR, `${service}-regloom.log`);
+
+    // Final safety: if for any reason we can't write there, fall back to /tmp (always writable)
+    try {
+        fs.accessSync(LOG_DIR, fs.constants.W_OK);
+    } catch {
+        console.warn(`No write permission on ${LOG_DIR}, falling back to /tmp for logs`);
+        filename = path.join('/tmp', `${service}-regloom.log`);
     }
-    filename = path.join(LOG_DIR, `${process.env.SERVICE_NAME ? process.env.SERVICE_NAME + '-' : ''}regloom.log`);
 }
+
 // -------------------------------
 // FORMATS
 // -------------------------------
+const requestIdFormat = format((info: Logform.TransformableInfo) => {
+    const store = asyncLocalStorage.getStore();
+    if (store?.requestId) {
+        info.requestId = store.requestId;
+    }
+    return info;
+});
 const jsonFormat = format.combine(
+    requestIdFormat(),
     format.uncolorize(),
     format.timestamp({ format: 'YYYY-MM-DDTHH:mm:ss.SSSZ' }),
     format.errors({ stack: true }),
@@ -33,14 +56,16 @@ const jsonFormat = format.combine(
     format.json()
 );
 const devFormat = format.combine(
+    requestIdFormat(),
     format.colorize({ all: true }),
     format.timestamp({ format: 'HH:mm:ss.SSS' }),
     format.errors({ stack: true }),
     format.label({ label: process.env.SERVICE_NAME || 'APP' }),
     format.printf((info: Logform.TransformableInfo) => {
         const label = `[${(info.label as string).toUpperCase()}]`;
+        const requestId = info.requestId ? `[${info.requestId}] ` : '';
         const stack = info.stack ? `\n${info.stack}` : '';
-        return `${info.timestamp} ${label} ${info.level}: ${info.message}${stack}`;
+        return `${info.timestamp} ${label} ${info.level}: ${requestId}${info.message}${stack}`;
     })
 );
 // -------------------------------
@@ -73,7 +98,7 @@ const logger: WinstonLogger = winston.createLogger({
 });
 // Only show startup logs outside Jest
 if (!isTest) {
-    logger.info(`Logger initialized – ${isProd ? 'PRODUCTION' : 'DEVELOPMENT'} mode (level: ${logLevel})`);
+    logger.info(`Logger initialized - ${isProd ? 'PRODUCTION' : 'DEVELOPMENT'} mode (level: ${logLevel})`);
     logger.info(`Logs → ${filename}`);
 }
 export { logger, WinstonLogger };

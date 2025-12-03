@@ -1,5 +1,5 @@
 /**
- * fhe.ts – FIXED VERSION
+ * fhe.ts - FIXED VERSION
  * Updated to use the correct TFHE-rs JS API with CompactCiphertextList.builder()
  * Compatible with node-tfhe@1.4.2
  * Encrypts arrays of uint8 using push_u8 for each byte

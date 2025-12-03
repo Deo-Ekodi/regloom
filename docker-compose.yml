@@ -1,27 +1,16 @@
 services:
-  db:
-    image: supabase/postgres:15.1.1.43
-    ports: ["54321:5432"]
-    environment:
-      POSTGRES_PASSWORD: postgres
-    volumes:
-      - db_data:/var/lib/postgresql/data
-    logging:
-      driver: "none"
-
-  frontend:
-    build:
-      context: .
-      dockerfile: apps/frontend/Dockerfile
-      target: dev
-    ports: ["3000:3000"]
-    volumes: 
-      - ./apps/frontend:/app/apps/frontend
-      - /app/apps/frontend/node_modules
-      - ./.env.example:/app/.env.example
-    environment:
-      - CHOKIDAR_USEPOLLING=true
-    depends_on: [db]
+  # frontend:
+  #   build:
+  #     context: .
+  #     dockerfile: apps/frontend/Dockerfile
+  #     target: dev
+  #   ports: ["3000:3000"]
+  #   volumes: 
+  #     - ./apps/frontend:/app/apps/frontend
+  #     - /app/apps/frontend/node_modules
+  #     - ./.env.example:/app/.env.example
+  #   environment:
+  #     - CHOKIDAR_USEPOLLING=true
 
   backend:
     build:
@@ -29,42 +18,129 @@ services:
       dockerfile: apps/backend/Dockerfile
       target: dev
     ports: ["4000:4000"]
+    env_file:
+      - .env
     volumes: 
       - ./apps/backend:/app/apps/backend
       - /app/apps/backend/node_modules
+      - ./logs:/logs
+      - pnpm-store:/app/.pnpm-store
+      - ./uploads:/app/apps/uploads
     environment:
       - NODE_ENV=development
-    depends_on: [db]
 
   privacy-engine:
     build:
       context: .
       dockerfile: apps/privacy-engine/Dockerfile
       target: dev
+    ports: ["4002:4002"]
+    env_file:
+      - .env
     volumes: 
       - ./apps/privacy-engine:/app/apps/privacy-engine
       - /app/apps/privacy-engine/node_modules
+      - ./logs:/logs
+      - pnpm-store:/app/.pnpm-store
 
   rule-engine:
     build:
       context: .
       dockerfile: apps/rule-engine/Dockerfile
       target: dev
-    ports:
-      - "4001:4001"
+    ports: ["4001:4001"]
+    env_file:
+      - .env
     volumes: 
       - ./apps/rule-engine:/app/apps/rule-engine
       - /app/apps/rule-engine/node_modules
+      - ./logs:/logs
+      - pnpm-store:/app/.pnpm-store
 
-  synth-gen:
-    build:
-      context: .
-      dockerfile: apps/synth-gen/Dockerfile
-      target: dev 
-    volumes: 
-      - ./apps/synth-gen:/app/apps/synth-gen
-      # Python usually installs to global site-packages in container.
+  # synth-gen:
+  #   build:
+  #     context: .
+  #     dockerfile: apps/synth-gen/Dockerfile
+  #     target: dev 
+  #   volumes: 
+  #     - ./apps/synth-gen:/app/apps/synth-gen
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    sysctls:
+      net.core.somaxconn: 512
+      vm.overcommit_memory: 1
+
+  dapr-sidecar:
+    image: daprio/daprd:latest
+    network_mode: "service:backend"
+    depends_on:
+      - backend
+      - redis
+    command:
+      - "./daprd"
+      - "--app-id"
+      - "regloom-backend"
+      - "--app-port"
+      - "4000"
+      - "--dapr-http-port"
+      - "3500"
+      - "--resources-path"
+      - "/components"
+      - "--log-level"
+      - "warn"
+    volumes:
+      - ./infra/dapr/components:/components
+
+  rule-engine-sidecar:
+    image: daprio/daprd:latest
+    network_mode: "service:rule-engine"
+    depends_on:
+      - rule-engine
+      - redis
+    command:
+      - "./daprd"
+      - "--app-id"
+      - "regloom-rule-engine"
+      - "--app-port"
+      - "4001"
+      - "--dapr-http-port"
+      - "3501"
+      - "--resources-path"
+      - "/components"
+      - "--log-level"
+      - "warn"
+    volumes:
+      - ./infra/dapr/components:/components
+
+  privacy-engine-sidecar:
+    image: daprio/daprd:latest
+    network_mode: "service:privacy-engine"
+    depends_on:
+      - privacy-engine
+      - redis
+    command:
+      - "./daprd"
+      - "--app-id"
+      - "regloom-privacy-engine"
+      - "--app-port"
+      - "4002"
+      - "--dapr-http-port"
+      - "3502"
+      - "--resources-path"
+      - "/components"
+      - "--log-level"
+      - "warn"
+    volumes:
+      - ./infra/dapr/components:/components
+
 
 volumes:
-  db_data:
   logs:
+  pnpm-store:
+  redis_data:

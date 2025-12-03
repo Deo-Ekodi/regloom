@@ -1,0 +1,19 @@
+# /infra/dapr/components/pubsub.yaml
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: regloom-pubsub
+spec:
+  type: pubsub.redis
+  version: v1
+  metadata:
+  - name: redisHost
+    value: redis:6379
+  - name: redisPassword
+    value: ""
+  - name: enableTLS
+    value: "false"
+  - name: maxRetries
+    value: "3"
+  - name: processingTimeout
+    value: 30s

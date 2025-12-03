@@ -1,215 +1,156 @@
-// Tests for drools_adapter.ts: Rigorous unit tests for compliance evaluation.
-// Uses faker for dynamic/random data generation to simulate real-world variability.
-// Includes fixed data tests for deterministic checks; asserts on compliant status and violations.
-// Run with `pnpm --filter @regloom/rule-engine test` for integrity verification.
-// Covers pass/fail scenarios, error reporting, and multi-regulation if extended.
+// apps/rule-engine/tests/drools_adapter.test.ts
+// Expanded tests for drools_adapter.ts: Unit tests for compliance evaluation.
+// Uses faker for random data; fixed cases for determinism.
+// Covers pass/fail, multi-reg, errors, batch. Mocks reg_parser/loadRules.
+// Run with `pnpm --filter @regloom/rule-engine test`.
+// to be expanded!
 
 // apps/rule-engine/tests/drools_adapter.test.ts
 import { evaluateCompliance } from '../src/drools_adapter';
-import { WeaveInput, ComplianceReport } from '@regloom/types';
+import { WeaveInput } from '@regloom/types';
+import { loadRules } from '../src/reg_parser';
 import { logger } from '@regloom/utils';
 import { Faker, en } from '@faker-js/faker';
-import fs from 'fs';
-import path from 'path';
-import cliProgress from 'cli-progress';
+import { Rule, Engine } from 'json-rules-engine'; // <--- FIX: Import Engine
+
+
+jest.mock('../src/reg_parser');
+
+// <--- FIX: Return 'logger as any' to satisfy Winston's chaining interface (Logger type)
+jest.spyOn(logger, 'info').mockImplementation(() => logger as any);
+jest.spyOn(logger, 'warn').mockImplementation(() => logger as any);
+jest.spyOn(logger, 'error').mockImplementation(() => logger as any);
 
 const faker = new Faker({ locale: [en] });
-const rulesDir = path.join(__dirname, '../src/rules');
-const ruleFiles = fs.readdirSync(rulesDir).filter(f => f.endsWith('.json'));
 
-interface TestCase {
-    description: string;
-    data: Record<string, any>;
-    expectedCompliant: boolean;
-    shouldHaveViolations?: number;
-}
-
-interface Result {
-    regulation: string;
-    randomPass: boolean;
-    randomCount: number;
-    edgePass: boolean;
-    edgeCount: number;
-}
-
-describe('RegLoom Rule Engine — COMPLIANCE VERIFICATION', () => {
-    const results: Result[] = [];
-    const multiBar = new cliProgress.MultiBar(
-        {
-            clearOnComplete: true,
-            hideCursor: true,
-            format: ' {regulation} │ {bar} │ {value}/{total} │ {percentage}%',
-            barCompleteChar: '█',
-            barIncompleteChar: '░',
-            autopadding: true,
-        },
-        cliProgress.Presets.shades_classic
-    );
-
-    beforeAll(() => {
-        console.clear();
-        console.log('\nRegLoom Compliance Verification In Progress...\n');
+describe('evaluateCompliance', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
     });
 
-    afterAll(() => {
-        multiBar.stop();
-        console.log('\n' + '═'.repeat(70));
-        console.log(' REGLOOM COMPLIANCE VERIFICATION REPORT');
-        console.log('═'.repeat(70));
-        console.log(' REGULATION   │ RANDOM TESTS     │ EDGE CASES      ');
-        console.log('─'.repeat(70));
-
-        let allPassed = true;
-        let totalScore = 0;
-
-        results.forEach(r => {
-            const randomStatus = r.randomPass ? `PASS (${r.randomCount}/100)` : `FAIL`;
-            const edgeStatus = r.edgePass ? `PASS (${r.edgeCount})` : `FAIL`;
-            console.log(` ${r.regulation.padEnd(12)}│ ${randomStatus.padEnd(16)} │ ${edgeStatus.padEnd(15)}`);
-            if (!r.randomPass || !r.edgePass) allPassed = false;
-            totalScore += r.randomPass && r.edgePass ? 1 : 0;
-        });
-
-        console.log('─'.repeat(70));
-        console.log(` RESULT: ${allPassed ? 'ALL PASS' : 'SOME FAILED'.padEnd(20)} │ SCORE: ${((totalScore / results.length) * 100).toFixed(0)}%`);
-        console.log('═'.repeat(70) + '\n');
+    it('returns compliant if no rules', async () => {
+        (loadRules as jest.Mock).mockResolvedValue([]);
+        const input: WeaveInput = {
+            data: [{ test: 'data' }],
+            regulations: ['ccpa'],
+            userId: 'test',
+            timestamp: '2023-01-01',
+            source: 'test',
+        };
+        const report = await evaluateCompliance(input);
+        expect(report.compliant).toBe(true);
+        expect(report.violations).toEqual([]);
+        expect(report.score).toBe(100);
+        expect(logger.warn).toHaveBeenCalledWith('No rules loaded; assuming compliant');
     });
 
-    ruleFiles.forEach((ruleFile) => {
-        const regulation = path.basename(ruleFile, '.json').toUpperCase();
-        const rulePath = path.join(rulesDir, ruleFile);
+    it('detects violations in batch', async () => {
+        const mockRules = [
+            new Rule({
+                conditions: { all: [{ fact: 'phone', operator: 'notEqual', value: null }, { fact: 'ccpa_opt_out', operator: 'equal', value: true }] },
+                event: { type: 'violation', params: { regulation: 'ccpa', ruleId: 'phone_optout', severity: 'high', description: 'Phone opt-out violation', affectedFields: ['phone'], remediation: 'Remove phone' } },
+            }),
+        ];
+        (loadRules as jest.Mock).mockResolvedValue(mockRules);
 
-        describe(regulation, () => {
-            let piiFacts = new Set<string>();
-            let consentFacts = new Set<string>();
+        const input: WeaveInput = {
+            data: [
+                { phone: '123', ccpa_opt_out: true }, // Violation
+                { phone: null, ccpa_opt_out: true }, // Clean
+                { phone: '456', ccpa_opt_out: false }, // Clean
+            ],
+            regulations: ['ccpa'],
+            userId: 'test',
+            timestamp: '2023-01-01',
+            source: 'test',
+        };
+        const report = await evaluateCompliance(input);
+        expect(report.compliant).toBe(false);
+        expect(report.violations.length).toBe(1);
+        expect(report.violations[0].recordIndex).toBe(0);
+        expect(report.violations[0].description).toBe('Phone opt-out violation');
+        expect(report.score).toBe(95);
+        expect(report.recommendations).toBeDefined();
+        expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Failed with 1 violations'));
+    });
 
-            beforeAll(() => {
-                const content = JSON.parse(fs.readFileSync(rulePath, 'utf-8'));
-                const rules = content.rules || [];
+    it('handles evaluation error per record', async () => {
+        const mockRules = [new Rule({ conditions: { all: [] }, event: { type: 'test' } })];
+        (loadRules as jest.Mock).mockResolvedValue(mockRules);
 
-                rules.forEach((rule: any) => {
-                    const extract = (cond: any): void => {
-                        if (cond.fact) {
-                            if (cond.fact.includes('consent') || cond.fact.includes('opt_out') || cond.fact.includes('approval')) {
-                                consentFacts.add(cond.fact);
-                            } else {
-                                piiFacts.add(cond.fact);
-                            }
-                        }
-                        cond.all?.forEach(extract);
-                        cond.any?.forEach(extract);
-                    };
-                    rule.conditions?.all?.forEach(extract);
-                    rule.conditions?.any?.forEach(extract);
-                });
-            });
-
-            const predictViolation = (data: Record<string, any>): boolean => {
-                for (const pii of piiFacts) {
-                    if (data[pii] != null && data[pii] !== '') {
-                        if (regulation === 'CCPA' && data.ccpa_opt_out === true) return true;
-                        const hasConsent = [...consentFacts].some(c => data[c] === true);
-                        if (!hasConsent) return true;
-                    }
-                }
-                return false;
-            };
-
-            it('100 random scenarios', async () => {
-                const bar = multiBar.create(100, 0, { regulation });
-
-                let failed = 0;
-                for (let i = 0; i < 100; i++) {
-                    const data: Record<string, any> = {};
-                    [...piiFacts, ...consentFacts].forEach(f => {
-                        data[f] = consentFacts.has(f)
-                            ? faker.datatype.boolean(regulation === 'CCPA' ? 0.3 : 0.75)
-                            : faker.datatype.boolean(0.6) ? 'x'.repeat(12) : null;
-                    });
-
-                    const expected = !predictViolation(data);
-                    let result: ComplianceReport;
-                    try {
-                        result = await evaluateCompliance({ data, regulations: [regulation.toLowerCase()] });
-                    } catch (err) {
-                        failed++;
-                        bar.increment();
-                        continue;
-                    }
-
-                    if (result.compliant !== expected) failed++;
-                    bar.increment();
-                }
-
-                bar.stop();
-
-                results.push({
-                    regulation,
-                    randomPass: failed === 0,
-                    randomCount: 100 - failed,
-                    edgePass: false,
-                    edgeCount: 0,
-                });
-
-                // Allow test to fail if needed — you said you don't care
-                if (failed > 0) {
-                    logger.warn(`${regulation}: ${failed} random test failures (allowed)`);
-                }
-                expect(true).toBe(true); // Always pass this block
-            });
-
-            it('edge cases', async () => {
-                const cases: TestCase[] = [];
-
-                // Clean
-                const clean: Record<string, any> = {};
-                [...piiFacts, ...consentFacts].forEach(f => (clean[f] = null));
-                cases.push({ description: 'clean', data: clean, expectedCompliant: true });
-
-                // Violations
-                piiFacts.forEach(pii => {
-                    const bad: Record<string, any> = {};
-                    [...piiFacts, ...consentFacts].forEach(f => {
-                        bad[f] = f === pii ? 'VIOLATION' : null;
-                    });
-                    if (regulation === 'CCPA') bad.ccpa_opt_out = true;
-                    else consentFacts.forEach(c => (bad[c] = false));
-                    cases.push({ description: `violation ${pii}`, data: bad, expectedCompliant: false, shouldHaveViolations: 1 });
-                });
-
-                // Safe
-                piiFacts.forEach(pii => {
-                    const good: Record<string, any> = {};
-                    [...piiFacts, ...consentFacts].forEach(f => {
-                        good[f] = f === pii ? 'SAFE' : null;
-                    });
-                    if (regulation === 'CCPA') good.ccpa_opt_out = false;
-                    else consentFacts.forEach(c => (good[c] = true));
-                    cases.push({ description: `safe ${pii}`, data: good, expectedCompliant: true });
-                });
-
-                let failed = 0;
-                for (const tc of cases) {
-                    try {
-                        const result = await evaluateCompliance({ data: tc.data, regulations: [regulation.toLowerCase()] });
-                        if (result.compliant !== tc.expectedCompliant) failed++;
-                        if (tc.shouldHaveViolations && result.violations.length !== tc.shouldHaveViolations) failed++;
-                    } catch {
-                        failed++;
-                    }
-                }
-
-                const lastResult = results.find(r => r.regulation === regulation);
-                if (lastResult) {
-                    lastResult.edgePass = failed === 0;
-                    lastResult.edgeCount = cases.length - failed;
-                }
-
-                if (failed > 0) {
-                    logger.warn(`${regulation}: ${failed} edge case failures (allowed)`);
-                }
-                expect(true).toBe(true); // Never fail the suite
-            });
+        // <--- FIX: Explicitly type 'facts' as any and cast return value to satisfy TypeScript
+        jest.spyOn(Engine.prototype, 'run').mockImplementation(async (facts: any) => {
+            if (facts.phone === 'error') throw new Error('Simulated eval error');
+            // Return minimal object satisfying EngineResult signature (casted as any)
+            return { events: [] } as any;
         });
+
+        const input: WeaveInput = {
+            data: [{ phone: 'ok' }, { phone: 'error' }, { phone: 'ok' }],
+            regulations: ['ccpa'],
+            userId: 'test',
+            timestamp: '2023-01-01',
+            source: 'test',
+        };
+        const report = await evaluateCompliance(input);
+        expect(report.compliant).toBe(false);
+        expect(report.violations.length).toBe(1);
+        expect(report.violations[0].regulation).toBe('system');
+        expect(report.violations[0].ruleId).toBe('eval_error');
+        expect(report.violations[0].description).toContain('Evaluation failed');
+        expect(report.violations[0].recordIndex).toBe(1);
+        expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('Error evaluating record 1'));
+    });
+
+    it('multi-regulation merging', async () => {
+        const ccpaRule = new Rule({ conditions: { all: [{ fact: 'ccpa_opt_out', operator: 'equal', value: true }] }, event: { type: 'ccpa_violation', params: { regulation: 'ccpa' } } });
+        const gdprRule = new Rule({ conditions: { all: [{ fact: 'gdpr_consent', operator: 'equal', value: false }] }, event: { type: 'gdpr_violation', params: { regulation: 'gdpr' } } });
+        (loadRules as jest.Mock).mockResolvedValue([ccpaRule, gdprRule]);
+
+        const input: WeaveInput = {
+            data: [{ ccpa_opt_out: true, gdpr_consent: false }],
+            regulations: ['ccpa', 'gdpr'],
+            userId: 'test',
+            timestamp: '2023-01-01',
+            source: 'test',
+        };
+        const report = await evaluateCompliance(input);
+        expect(report.violations.length).toBe(2);
+        expect(report.violations[0].regulation).toBe('ccpa');
+        expect(report.violations[1].regulation).toBe('gdpr');
+    });
+
+    it('1000 random stress test (performance)', async () => {
+        // Restore the original implementation of Engine.run for this test to ensure it actually runs logic
+        jest.spyOn(Engine.prototype, 'run').mockRestore();
+
+        const mockRule = new Rule({ conditions: { all: [{ fact: 'random', operator: 'greaterThan', value: 0.5 }] }, event: { type: 'random_violation', params: { regulation: 'test' } } });
+        (loadRules as jest.Mock).mockResolvedValue([mockRule]);
+
+        const input: WeaveInput = {
+            data: Array.from({ length: 1000 }, () => ({ random: faker.number.float({ min: 0, max: 1 }) })),
+            regulations: ['test'],
+            userId: 'test',
+            timestamp: '2023-01-01',
+            source: 'test',
+        };
+        const start = Date.now();
+        const report = await evaluateCompliance(input);
+        const duration = Date.now() - start;
+        expect(duration).toBeLessThan(5000);
+        expect(report.violations.length).toBeGreaterThan(400);
+        expect(report.violations.length).toBeLessThan(600);
+    });
+
+    it('invalid regulation throws in load', async () => {
+        (loadRules as jest.Mock).mockRejectedValue(new Error('Rules load failed'));
+        const input: WeaveInput = {
+            data: [{}],
+            regulations: ['invalid'],
+            userId: 'test',
+            timestamp: '2023-01-01',
+            source: 'test',
+        };
+        await expect(evaluateCompliance(input)).rejects.toThrow('Rules load failed');
     });
 });

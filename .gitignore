@@ -12,7 +12,27 @@ supabase
 
 apps/privacy-engine/keys/
 apps/privacy-engine/artifacts/
+keys
 
 **.ptau
 logs/
 !logs/.gitkeep
+
+
+.poetry/
+.pypoetry/
+.pyenv
+
+uploads/
+*.csv
+coverage/
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+.pyre/
+.mypy_cache/
+.dmypy.json
+.pytype/
+.cache/
+*.xml

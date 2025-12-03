@@ -1,3 +1,4 @@
+# /apps/synth-gen/main.py
 import pandas as pd
 from gan_model import generate_synth
 from anomaly_detector import detect_pii, detect_bias
