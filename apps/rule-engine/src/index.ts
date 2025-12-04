@@ -15,7 +15,16 @@ app.use(express.json({ limit: '10mb' })); // Handle larger payloads
 const PORT = process.env.RULE_ENGINE_PORT || 4001;
 
 // Health check (for k8s probes/Dapr)
-app.get('/health', (_req: Request, res: Response) => res.status(200).json({ status: 'healthy' }));
+app.get('/health', (_req, res) => {
+  logger.info('Health check endpoint accessed.');
+  res.status(200).json({
+    status: 'healthy',
+    service: 'regloom-rule-engine',
+    version: '1.0.0',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
 
 // Main evaluation endpoint
 app.post('/evaluate', async (req: Request, res: Response, next: NextFunction) => {
@@ -40,8 +49,8 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 
 const server = app.listen(PORT, () => {
   logger.info(`Rule Engine running on port ${PORT} in ${process.env.NODE_ENV} mode`);
-  if (process.env.DAPR_HTTP_PORT) {
-    logger.info(`Dapr sidecar enabled on port ${process.env.DAPR_HTTP_PORT}`);
+  if (process.env.DAPR_RULE_ENGINE_HTTP_PORT) {
+    logger.info(`Dapr sidecar enabled on port ${process.env.DAPR_RULE_ENGINE_HTTP_PORT}`);
   }
 });
 

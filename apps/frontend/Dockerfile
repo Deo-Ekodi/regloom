@@ -41,7 +41,7 @@ COPY --chown=node:node . .
 RUN pnpm --filter @regloom/frontend build
 
 # ─── DEV STAGE (hot reload + logging) ───
-FROM node:20-alpine AS dev
+FROM node:20-slim AS dev
 
 ENV NODE_ENV=development
 ENV PNPM_VERSION=10.24.0

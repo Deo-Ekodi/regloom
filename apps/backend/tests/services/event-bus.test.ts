@@ -2,7 +2,6 @@ import { DaprClient } from '@dapr/dapr';
 import { v4 as uuidv4 } from 'uuid';
 import { trace } from '@opentelemetry/api';
 import { publishEvent, isEventBusHealthy, publishEvents } from '../../src/services/event-bus';
-import { logger } from '@regloom/utils';
 
 jest.mock('@dapr/dapr');
 jest.mock('uuid');
@@ -22,7 +21,7 @@ describe('Event Bus — MASSIVE', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         process.env.DAPR_HOST = 'http://localhost';
-        process.env.DAPR_HTTP_PORT = '3500';
+        process.env.DAPR_BACKEND_HTTP_PORT = '3500';
         mockHealth.check.mockResolvedValue(undefined);
     });
 

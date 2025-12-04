@@ -25,7 +25,7 @@ export async function handleWeave(req: Request, res: Response) {
             input.data = await ingest(input.source, input.connectorParams || {}, input.options);
         }
 
-        if (!input.data || Object.keys(input.data).length === 0) {
+        if (!input.data || input.data.length === 0) {
             throw new Error('No data provided or ingested');
         }
 

@@ -10,7 +10,7 @@ import { Worker } from '@temporalio/worker';
 import { WorkflowClient } from '@temporalio/client';
 import axios from 'axios';
 // Import explicit signal/query names for type safety
-import { weaveSaga, activities, cancelWeave, getStatus } from '../../src/services/workflow';
+import { weaveSaga, activities, cancelWeave, getStatus } from '../../src/services/workflows';
 import { WeaveInput } from '@regloom/types';
 import { publishEvent } from '../../src/services/event-bus';
 

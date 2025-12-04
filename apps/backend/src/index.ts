@@ -5,12 +5,29 @@ import express, { Application } from 'express';
 import { logger } from '@regloom/utils'; // Shared logger
 import apiGateway from './services/api-gateway'; // Routing and validation setup
 import tracingMiddleware from './middlewares/tracing'; // Request tracing middleware
+// import { spawn } from 'child_process';
+import path from 'path';
+import './services/workflow_worker';
+
 const app: Application = express();
 const PORT = process.env.PORT || 4000;
+
 // Middleware setup
 app.use(express.json()); // Parse JSON bodies
 app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 app.use(tracingMiddleware); // Add tracing for request IDs (must be before routes)
+
+// Public health check — MUST be before auth middleware
+app.get('/health', (_req, res) => {
+  logger.info('Health check endpoint accessed.');
+  res.status(200).json({
+    status: 'healthy',
+    service: 'regloom-backend',
+    version: '1.0.0',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
 
 apiGateway(app);
 
@@ -23,6 +40,7 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 // Start server
 const server = app.listen(PORT, () => {
   logger.info(`Backend server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
+  logger.debug(`Backend server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
 });
 
 // Graceful shutdown

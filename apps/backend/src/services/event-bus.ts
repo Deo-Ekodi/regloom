@@ -17,7 +17,9 @@ import { trace, context } from '@opentelemetry/api';
 
 // === CONFIG ===
 const DAPR_HOST = process.env.DAPR_HOST || 'http://localhost';
-const DAPR_PORT = process.env.DAPR_HTTP_PORT || '3500';
+const DAPR_PORT = process.env.DAPR_BACKEND_HTTP_PORT
+    ? String(process.env.DAPR_BACKEND_HTTP_PORT)
+    : '3500';
 const PUBSUB_NAME = process.env.DAPR_PUBSUB_NAME || 'regloom-pubsub';
 
 let client: DaprClient;

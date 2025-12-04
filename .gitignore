@@ -36,3 +36,5 @@ htmlcov/
 .pytype/
 .cache/
 *.xml
+
+.pnpm-store

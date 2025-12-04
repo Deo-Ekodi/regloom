@@ -1,0 +1,9 @@
+# infra/temporal/dynamicconfig/development-sql.yaml
+# Official Temporal dev config — enables all features
+# https://github.com/temporalio/temporal/blob/main/docker/config/dynamicconfig/development-sql.yaml
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+    constraints: {}
+frontend.enableUpdateWorkflowExecution:
+  - value: true
+    constraints: {}

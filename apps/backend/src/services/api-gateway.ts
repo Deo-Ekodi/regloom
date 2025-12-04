@@ -28,16 +28,23 @@ import { loginSchema, registerSchema } from './auth';
 // Ingestion schema (now includes the 'source' required for generic ingestion)
 const ingestionSchema = z.object({
     source: z.string().min(1, 'Source required').default('csv'),
-    regulations: z.array(z.string()).min(1, 'At least one regulation required'),
+    regulations: z.array(z.string()).optional(), // Made optional as not directly used in ingest call
     // Note: Other connector-specific params (like 'delimiter' or 'objectType') would go here too
 });
 
-// Weave schema based on shared types
-import { WeaveInput } from '@regloom/types';
+// Weave schema based on shared types (fully defined to match WeaveInput interface)
 const weaveSchema = z.object({
-    data: z.record(z.string(), z.any()), // Flexible raw data
+    data: z.array(z.record(z.string(), z.any())), // Batch array of records
     regulations: z.array(z.string()),
-}).strict() as z.ZodSchema;
+    userId: z.string(),
+    timestamp: z.string(),
+    source: z.string(),
+    connectorParams: z.record(z.string(), z.any()).optional(),
+    options: z.object({
+        maxRows: z.number().optional(),
+        dryRun: z.boolean().optional(),
+    }).optional(),
+});
 
 // Validation middleware factory
 const validate = (schema: z.ZodSchema) => (req: Request, res: Response, next: NextFunction) => {
@@ -54,11 +61,6 @@ const validate = (schema: z.ZodSchema) => (req: Request, res: Response, next: Ne
 };
 
 export default function setupApiGateway(app: Application) {
-    // Health check route (public)
-    app.get('/health', validate(healthSchema), (req: Request, res: Response) => {
-        res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
-    });
-
     // Auth routes (public)
     app.post('/auth/register', validate(registerSchema), (req: Request, res: Response) => {
         // Call auth service register
@@ -119,7 +121,7 @@ export default function setupApiGateway(app: Application) {
                 ingested: {
                     source,
                     recordCount: ingestedData.length,
-                    regulations,
+                    regulations: regulations || [], // Optional, so fallback to empty
                 },
                 dataSample: ingestedData.slice(0, 5) // Return a small sample
             });

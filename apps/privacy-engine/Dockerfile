@@ -63,7 +63,11 @@ RUN pnpm --filter @regloom/privacy-engine build
 
 # ─────────────────────────────────────
 # Dev: Hot reload + mounted store/logs
-FROM node:20-alpine AS dev
+FROM node:20-slim AS dev
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends wget ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=development
 
@@ -85,12 +89,7 @@ COPY --from=installer --chown=node:node /app/pnpm-lock.yaml ./
 COPY --from=installer --chown=node:node /app/pnpm-workspace.yaml ./
 COPY --from=installer --chown=node:node /app/tsconfig.json ./
 
-# Copy source (overlaid by dev volume)
-# COPY --chown=node:node apps/privacy-engine ./apps/privacy-engine
-
-# Hot reload support
-ENV NODE_OPTIONS="--loader ts-node/esm --no-warnings=ExperimentalWarning"
 
 EXPOSE 4002
 
-CMD ["pnpm", "--filter", "@regloom/privacy-engine", "dev"] 
+CMD ["pnpm", "--filter", "@regloom/privacy-engine", "run", "dev"] 

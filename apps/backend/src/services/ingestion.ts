@@ -6,7 +6,8 @@
 // Uses csv-parse for CSV, @hubspot/api-client for HubSpot with pagination.
 // Prod-grade: Type-safe, async, error classes, env-configurable.
 
-import fs from 'fs';
+import * as fs from 'fs'; // For createReadStream
+import fsp from 'fs/promises'; // For access/unlink
 import path from 'path';
 import { parse } from 'csv-parse';
 // import { Client as HubSpotClient } from '@hubspot/api-client';
@@ -61,7 +62,7 @@ connectors.set('csv', async (params, options = {}) => {
     let rowCount = 0;
 
     try {
-        await fs.promises.access(safeFilePath, fs.constants.R_OK);
+        await fsp.access(safeFilePath, fs.constants.R_OK);
 
         const parser = parse({
             columns: true,
@@ -146,6 +147,7 @@ connectors.set('csv', async (params, options = {}) => {
 // });
 
 // Main ingestion function (dispatches to connector)
+
 export async function ingest(source: string, params: Record<string, any>, options?: { maxRows?: number }): Promise<Record<string, any>[]> {
     const connector = connectors.get(source.toLowerCase());
     if (!connector) throw new ConnectorError(`Unsupported source: ${source}. Available: ${Array.from(connectors.keys()).join(', ')}`);

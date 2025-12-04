@@ -62,7 +62,11 @@ RUN pnpm --filter @regloom/backend build
 
 # ─────────────────────────────────────
 # Dev: Hot reload + mounted store/logs
-FROM node:20-alpine AS dev
+FROM node:20-slim AS dev
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends wget ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=development
 
@@ -70,7 +74,6 @@ RUN npm i -g pnpm@10.24.0
 
 WORKDIR /app
 
-# RUN mkdir -p /logs /app/.pnpm-store && chown -R node:node /app /logs /app/.pnpm-store
 RUN mkdir -p /logs /app/.pnpm-store /app/apps/uploads && \
     chown -R node:node /app /logs /app/.pnpm-store /app/apps/uploads
 
@@ -86,9 +89,6 @@ COPY --from=installer --chown=node:node /app/pnpm-lock.yaml ./
 COPY --from=installer --chown=node:node /app/pnpm-workspace.yaml ./
 COPY --from=installer --chown=node:node /app/tsconfig.json ./
 
-# Hot reload support
-ENV NODE_OPTIONS="--loader ts-node/esm --no-warnings=ExperimentalWarning"
-
 EXPOSE 4000
 
-CMD ["pnpm", "--filter", "@regloom/backend", "dev"] 
+CMD ["pnpm", "--filter", "@regloom/backend", "run", "dev"]

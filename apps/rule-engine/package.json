@@ -3,7 +3,7 @@
   "private": true,
   "main": "dist/index.js",
   "scripts": {
-    "dev": "ts-node-dev --respawn --poll --transpile-only --ignore-watch node_modules --project /app/tsconfig.json src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc --build tsconfig.build.json",
     "test": "jest"
   },

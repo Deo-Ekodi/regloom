@@ -1,9 +1,10 @@
 # docker-compose.override.yml
 services:
+  # frontend: (uncomment when ready)
   # frontend:
   #   volumes:
-  #     - ./apps/frontend:/app/apps/frontend
-  #     - /app/apps/frontend/node_modules
+  #     - .:/app
+  #     - /app/node_modules
   #     - ./logs:/logs
   #   environment:
   #     - SERVICE_NAME=frontend
@@ -11,23 +12,25 @@ services:
   #     - LOG_DIR=/logs
   #     - NODE_ENV=development
   #   command: pnpm --filter @regloom/frontend dev
+
   backend:
     volumes:
-      - ./apps/backend:/app/apps/backend
-      - /app/apps/backend/node_modules
+      - .:/app                  # ← mount monorepo root
+      - /app/node_modules       # ← prevent host node_modules bleed
       - ./logs:/logs
+      - ./uploads:/app/uploads
       - pnpm-store:/app/.pnpm-store
-      - ./uploads:/app/apps/uploads
     environment:
       - SERVICE_NAME=backend
       - LOG_LEVEL=debug
       - LOG_DIR=/logs
       - NODE_ENV=development
-    command: pnpm --filter @regloom/backend dev
+    command: pnpm --filter @regloom/backend run dev
+
   privacy-engine:
     volumes:
-      - ./apps/privacy-engine:/app/apps/privacy-engine
-      - /app/apps/privacy-engine/node_modules
+      - .:/app
+      - /app/node_modules
       - ./logs:/logs
       - pnpm-store:/app/.pnpm-store
     environment:
@@ -35,11 +38,12 @@ services:
       - LOG_LEVEL=debug
       - LOG_DIR=/logs
       - NODE_ENV=development
-    command: pnpm --filter @regloom/privacy-engine dev
+    command: pnpm --filter @regloom/privacy-engine run dev
+
   rule-engine:
     volumes:
-      - ./apps/rule-engine:/app/apps/rule-engine
-      - /app/apps/rule-engine/node_modules
+      - .:/app
+      - /app/node_modules
       - ./logs:/logs
       - pnpm-store:/app/.pnpm-store
     environment:
@@ -47,13 +51,14 @@ services:
       - LOG_LEVEL=debug
       - LOG_DIR=/logs
       - NODE_ENV=development
-    command: pnpm --filter @regloom/rule-engine dev
+    command: pnpm --filter @regloom/rule-engine run dev
+
+  # synth-gen: (when ready)
   # synth-gen:
   #   volumes:
-  #     - ./apps/synth-gen:/app/apps/synth-gen
+  #     - .:/app
   #     - ./logs:/logs
   #   environment:
   #     - SERVICE_NAME=synth-gen
   #     - LOG_LEVEL=debug
   #     - LOG_DIR=/logs
-  #     - NODE_ENV=development

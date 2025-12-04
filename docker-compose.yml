@@ -1,87 +1,109 @@
+# docker-compose.yml — Production-grade RegLoom stack (December 2025)
 services:
-  # frontend:
-  #   build:
-  #     context: .
-  #     dockerfile: apps/frontend/Dockerfile
-  #     target: dev
-  #   ports: ["3000:3000"]
-  #   volumes: 
-  #     - ./apps/frontend:/app/apps/frontend
-  #     - /app/apps/frontend/node_modules
-  #     - ./.env.example:/app/.env.example
-  #   environment:
-  #     - CHOKIDAR_USEPOLLING=true
-
+  # ========================== CORE MICROSERVICES ==========================
   backend:
     build:
       context: .
       dockerfile: apps/backend/Dockerfile
-      target: dev
-    ports: ["4000:4000"]
+      target: ${BUILD_TARGET:-dev}
+    ports:
+      - "4000:4000"
     env_file:
       - .env
-    volumes: 
-      - ./apps/backend:/app/apps/backend
-      - /app/apps/backend/node_modules
+    volumes:
+      - .:/app
+      - /app/node_modules
       - ./logs:/logs
+      - ./uploads:/app/uploads
       - pnpm-store:/app/.pnpm-store
-      - ./uploads:/app/apps/uploads
     environment:
       - NODE_ENV=development
-
-  privacy-engine:
-    build:
-      context: .
-      dockerfile: apps/privacy-engine/Dockerfile
-      target: dev
-    ports: ["4002:4002"]
-    env_file:
-      - .env
-    volumes: 
-      - ./apps/privacy-engine:/app/apps/privacy-engine
-      - /app/apps/privacy-engine/node_modules
-      - ./logs:/logs
-      - pnpm-store:/app/.pnpm-store
+      - TEMPORAL_ADDRESS=temporal:7233
+    depends_on:
+      temporal:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:4000/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
   rule-engine:
     build:
       context: .
       dockerfile: apps/rule-engine/Dockerfile
-      target: dev
-    ports: ["4001:4001"]
+      target: ${BUILD_TARGET:-dev}
+    ports:
+      - "4001:4001"
     env_file:
       - .env
-    volumes: 
-      - ./apps/rule-engine:/app/apps/rule-engine
-      - /app/apps/rule-engine/node_modules
+    volumes:
+      - .:/app
+      - /app/node_modules
       - ./logs:/logs
       - pnpm-store:/app/.pnpm-store
-
-  # synth-gen:
-  #   build:
-  #     context: .
-  #     dockerfile: apps/synth-gen/Dockerfile
-  #     target: dev 
-  #   volumes: 
-  #     - ./apps/synth-gen:/app/apps/synth-gen
-
-  redis:
-    image: redis:latest
+    environment:
+      - NODE_ENV=development
+      - RULES_DIR=/app/apps/rule-engine/src/rules
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:4001/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+      
+  privacy-engine:
+    build:
+      context: .
+      dockerfile: apps/privacy-engine/Dockerfile
+      target: ${BUILD_TARGET:-dev}
     ports:
-      - "6379:6379"
-    command: redis-server --save 60 1 --loglevel warning
+      - "4002:4002"
+    env_file:
+      - .env
     volumes:
-      - redis_data:/data
-    sysctls:
-      net.core.somaxconn: 512
-      vm.overcommit_memory: 1
+      - .:/app
+      - /app/node_modules
+      - ./logs:/logs
+      - pnpm-store:/app/.pnpm-store
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:4002/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
 
-  dapr-sidecar:
+  # Uncomment when synth-gen is ready
+  # synth-gen:
+  # build:
+  # context: .
+  # dockerfile: apps/synth-gen/Dockerfile
+  # ports:
+  # - "4003:4003"
+  # environment:
+  # - PYTHONUNBUFFERED=1
+  # ========================== DAPR SIDECARS (Zero-trust comms) ==========================
+  dapr-backend:
     image: daprio/daprd:latest
     network_mode: "service:backend"
     depends_on:
-      - backend
-      - redis
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DAPR_BACKEND_HTTP_PORT=${DAPR_BACKEND_HTTP_PORT:-3500}
     command:
       - "./daprd"
       - "--app-id"
@@ -89,20 +111,25 @@ services:
       - "--app-port"
       - "4000"
       - "--dapr-http-port"
-      - "3500"
+      - "${DAPR_BACKEND_HTTP_PORT:-3500}"
       - "--resources-path"
       - "/components"
       - "--log-level"
       - "warn"
     volumes:
       - ./infra/dapr/components:/components
-
-  rule-engine-sidecar:
+    # attach: false
+    # logging:
+    #   driver: "none"
+      
+  dapr-rule-engine:
     image: daprio/daprd:latest
     network_mode: "service:rule-engine"
     depends_on:
-      - rule-engine
-      - redis
+      rule-engine:
+        condition: service_healthy
+    environment:
+      - DAPR_RULE_ENGINE_HTTP_PORT=${DAPR_RULE_ENGINE_HTTP_PORT:-3501}
     command:
       - "./daprd"
       - "--app-id"
@@ -110,20 +137,25 @@ services:
       - "--app-port"
       - "4001"
       - "--dapr-http-port"
-      - "3501"
+      - "${DAPR_RULE_ENGINE_HTTP_PORT:-3501}"
       - "--resources-path"
       - "/components"
       - "--log-level"
       - "warn"
     volumes:
       - ./infra/dapr/components:/components
+    # attach: false
+    # logging:
+    #   driver: "none"
 
-  privacy-engine-sidecar:
+  dapr-privacy-engine:
     image: daprio/daprd:latest
     network_mode: "service:privacy-engine"
     depends_on:
-      - privacy-engine
-      - redis
+      privacy-engine:
+        condition: service_healthy
+    environment:
+      - DAPR_PRIVACY_ENGINE_HTTP_PORT=${DAPR_PRIVACY_ENGINE_HTTP_PORT:-3502}
     command:
       - "./daprd"
       - "--app-id"
@@ -131,16 +163,118 @@ services:
       - "--app-port"
       - "4002"
       - "--dapr-http-port"
-      - "3502"
+      - "${DAPR_PRIVACY_ENGINE_HTTP_PORT:-3502}"
       - "--resources-path"
       - "/components"
       - "--log-level"
       - "warn"
     volumes:
       - ./infra/dapr/components:/components
+    # attach: false
+    # logging:
+    #   driver: "none"
 
+  # ========================== TEMPORAL OSS (Free self-hosted) ==========================
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: temporal
+    volumes:
+      - temporal_pg_data:/var/lib/postgresql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: pg_isready -U postgres
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    attach: false
+    logging:
+      driver: "none"
 
+  temporal:
+      image: temporalio/auto-setup:1.25.0
+      depends_on:
+        postgres:
+          condition: service_healthy
+      environment:
+        - DB=postgres12
+        - DB_PORT=5432
+        - POSTGRES_USER=postgres
+        - POSTGRES_PWD=postgres
+        - POSTGRES_SEEDS=postgres
+        # CRITICAL FIX: Bind to all interfaces so localhost healthchecks pass
+        - BIND_ON_IP=0.0.0.0
+        # Ensure CLI knows where to look inside the container
+        - TEMPORAL_CLI_ADDRESS=127.0.0.1:7233
+        - ENABLE_ES=false 
+        - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/config/dynamicconfig/development-sql.yaml
+        - LOG_LEVEL=debug
+      volumes:
+        - ./infra/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
+      ports:
+        - "7233:7233"
+        - "7234:7234"
+        - "7235:7235"
+        - "7239:7239"
+      healthcheck:
+        # Use 'tctl' checking localhost. This will now work because of BIND_ON_IP.
+        test: ["CMD", "tctl", "--address", "127.0.0.1:7233", "cluster", "health"]
+        interval: 10s
+        timeout: 5s
+        retries: 30
+        start_period: 30s
+        start_interval: 2s
+      attach: false
+      logging:
+        driver: "none"
+
+  temporal-admin-tools:
+    image: temporalio/admin-tools:1.25.0-tctl-1.18.1-cli-1.1.0
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      - TEMPORAL_CLI_ADDRESS=temporal:7233
+    attach: false
+    logging:
+      driver: "none"
+
+  temporal-web:
+    image: temporalio/web:latest
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      - TEMPORAL_GRPC_ENDPOINT=temporal:7233
+      - TEMPORAL_PERMITTED_NAMESPACES=default
+    ports:
+      - "8080:8080"
+    attach: false
+    logging:
+      driver: "none"
+
+  # ========================== SUPPORTING SERVICES ==========================
+  redis:
+    image: redis:latest
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: redis-cli ping
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    attach: false
+    logging:
+      driver: "none"
+    
 volumes:
   logs:
   pnpm-store:
   redis_data:
+  temporal_pg_data:

@@ -318,7 +318,7 @@ COPY . .
 RUN pnpm --filter @regloom/frontend build
 
 # DEV STAGE: Fixes bin path issue
-FROM node:20-alpine AS dev
+FROM node:20-slim AS dev
 # Activate pnpm and set up path
 RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
 WORKDIR /app
@@ -353,7 +353,7 @@ WORKDIR /app/apps/$app
 RUN pnpm build
 
 # DEV STAGE: Fixes bin path issue
-FROM node:20-alpine AS dev
+FROM node:20-slim AS dev
 RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
 WORKDIR /app
 # Copy necessary node_modules structure for running dev scripts from base
