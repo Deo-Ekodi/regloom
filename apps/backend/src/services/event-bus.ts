@@ -26,7 +26,12 @@ let client: DaprClient;
 let clientReady = false;
 
 async function getClient(): Promise<DaprClient> {
-    if (clientReady) return client;
+    if (clientReady) {
+        logger.debug('Dapr client already initialized and ready. Skipping reconnection attempt.');
+        return client;
+    }
+
+    logger.info('Attempting to initialize and connect Dapr client...');
 
     try {
         client = new DaprClient({
@@ -40,11 +45,14 @@ async function getClient(): Promise<DaprClient> {
         logger.info('Dapr client connected successfully', { host: DAPR_HOST, port: DAPR_PORT });
         return client;
     } catch (err) {
+        const errorMsg = (err as Error).message;
         logger.error('Failed to connect to Dapr sidecar', {
             host: DAPR_HOST,
             port: DAPR_PORT,
-            error: (err as Error).message,
+            error: errorMsg,
         });
+        // CRITICAL: If the client cannot connect, this is an emergency for eventing.
+        logger.emerg('Event bus is permanently unavailable due to Dapr sidecar connection failure.');
         throw err;
     }
 }
@@ -81,6 +89,8 @@ export async function publishEvent<T>(
     const source = options.source || 'backend';
     const maxRetries = options.maxRetries ?? 3;
 
+    logger.debug(`Preparing to publish event to topic: ${topic}`, { eventId, correlationId, source, maxRetries });
+
     const payload: RegLoomEvent<T> = {
         data,
         metadata: {
@@ -96,44 +106,65 @@ export async function publishEvent<T>(
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
+            logger.debug(`Publish attempt ${attempt}/${maxRetries}`, { topic, eventId, correlationId });
             await client.pubsub.publish(PUBSUB_NAME, topic, payload);
-            logger.info(`Event published`, { topic, eventId, correlationId, attempt });
+            logger.info(`Event published successfully`, { topic, eventId, correlationId, attempt });
             return;
         } catch (err) {
             const msg = (err as Error).message;
-            logger.warn(`Publish failed (attempt ${attempt}/${maxRetries})`, {
-                topic,
-                eventId,
-                correlationId,
-                error: msg,
-            });
+
+            if (attempt < maxRetries) {
+                logger.warn(`Publish failed (attempt ${attempt}/${maxRetries}). Retrying in exponential backoff.`, {
+                    topic,
+                    eventId,
+                    correlationId,
+                    error: msg,
+                });
+            } else {
+                logger.error(`Publish failed on final attempt ${attempt}/${maxRetries}. Proceeding to DLQ logic.`, {
+                    topic,
+                    eventId,
+                    correlationId,
+                    error: msg,
+                });
+            }
 
             if (attempt === maxRetries) {
                 // FINAL FAILURE → SEND TO DLQ
                 try {
+                    logger.info(`Sending event to Dead-Letter Queue topic: ${topic}-dlq`);
                     await client.pubsub.publish(PUBSUB_NAME, `${topic}-dlq`, {
                         ...payload,
                         metadata: { ...payload.metadata, failedAt: new Date().toISOString(), error: msg },
                     });
-                    logger.error(`Event sent to DLQ`, { topic: `${topic}-dlq`, eventId, correlationId });
+                    logger.error(`Event successfully sent to DLQ`, { topic: `${topic}-dlq`, eventId, correlationId });
                 } catch (dlqErr) {
-                    logger.error(`DLQ publish failed too`, { error: (dlqErr as Error).message });
+                    const dlqErrMsg = (dlqErr as Error).message;
+                    // CRITICAL: Cannot publish to DLQ, meaning the failure is persistent or network-wide.
+                    logger.emerg(`DLQ publish failed too, event is lost.`, {
+                        originalTopic: topic,
+                        dlqError: dlqErrMsg
+                    });
                 }
                 throw new Error(`Failed to publish event '${topic}' after ${maxRetries} attempts`);
             }
 
             // Exponential backoff
-            await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+            const delayMs = 1000 * 2 ** attempt;
+            logger.debug(`Delaying ${delayMs}ms before next retry.`, { topic, eventId });
+            await new Promise((r) => setTimeout(r, delayMs));
         }
     }
 }
 
 // === BULK PUBLISH ===
 export async function publishEvents(events: Array<{ topic: string; data: any; source?: string }>) {
+    logger.debug(`Starting bulk publish operation for ${events.length} events.`);
     await Promise.allSettled(
         events.map((e) =>
             publishEvent(e.topic, e.data, { source: e.source || 'bulk' }).catch(() => {
-                // Individual failures already logged
+                // Individual failures already logged (as error or emerg)
+                logger.debug(`Individual event failed in bulk publish, but failure was handled by publishEvent.`, { topic: e.topic });
             })
         )
     );
@@ -142,11 +173,14 @@ export async function publishEvents(events: Array<{ topic: string; data: any; so
 
 // === HEALTH CHECK ===
 export async function isEventBusHealthy(): Promise<boolean> {
+    logger.debug('Running event bus health check.');
     try {
         const client = await getClient();
         await client.health.isHealthy();
+        logger.debug('Event bus health check passed.');
         return true;
-    } catch {
+    } catch (err) {
+        logger.warn(`Event bus health check failed: ${(err as Error).message}`);
         return false;
     }
 }

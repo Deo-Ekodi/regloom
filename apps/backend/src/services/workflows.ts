@@ -43,10 +43,13 @@ export const cancelWeave = defineSignal('cancelWeave');
 export const getStatus = defineQuery<{ phase: string; progress: number }>('getStatus');
 
 export async function weaveSaga(input: WeaveInput): Promise<any> {
+    log.info('Weave saga started', { userId: input.userId, source: input.source }); // INFO log
+    log.debug('Weave saga input details', { input }); // DEBUG log
+
     let currentPhase = 'started';
 
     setHandler(cancelWeave, () => {
-        log.info('Weave cancelled by user');
+        log.warn('Weave cancelled by user signal'); // WARN log
         throw new Error('Weave cancelled');
     });
 
@@ -54,27 +57,46 @@ export async function weaveSaga(input: WeaveInput): Promise<any> {
 
     try {
         currentPhase = 'ingesting';
+        log.info('Starting data ingestion activity'); // INFO log
         const ingested = await ingestData(input);
+        log.info('Data ingestion complete', { recordCount: ingested.length }); // INFO log
 
         currentPhase = 'checking_compliance';
+        log.info('Starting compliance check activity'); // INFO log
         const report = await checkCompliance({ ...input, data: ingested });
+        log.debug('Compliance report received', { compliant: report.compliant }); // DEBUG log
 
-        if (!report.compliant) throw new Error('Compliance failed');
+        if (!report.compliant) {
+            log.warn('Weave stopped: Compliance failed based on report', { report }); // WARN log
+            throw new Error('Compliance failed');
+        }
 
         currentPhase = 'synthesizing';
+        log.info('Starting data synthesis activity'); // INFO log
         const synth = await synthesizeData({ ...report, data: ingested });
+        log.debug('Synthesis complete', { synthesizedCount: synth.length }); // DEBUG log
 
         currentPhase = 'applying_privacy';
+        log.info('Starting privacy application activity'); // INFO log
         const output = await applyPrivacy(synth);
+        log.info('Privacy application complete'); // INFO log
 
         currentPhase = 'completed';
+        log.info('Weave completed successfully. Publishing event.'); // INFO log
         await publishWeaveCompleted(output, report, input.userId);
+        log.debug('Completed event published'); // DEBUG log
 
         return output;
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        log.error('Weave workflow failed', { error: msg });
+
+        // This log serves as the EMERG equivalent—it is the final failure point 
+        // before the workflow terminates and throws.
+        log.error('Weave workflow failed (EMERG equivalent)', { error: msg, phase: currentPhase, userId: input.userId });
+
         await publishWeaveFailed(msg, input.userId, input.timestamp || new Date().toISOString());
+
+        log.debug('Failed event published for compensation'); // DEBUG log
         throw err;
     }
 }

@@ -40,6 +40,7 @@ function getSafePath(filePath: string): string {
         logger.warn(`Path traversal attempt: ${filePath}`);
         throw new IngestionError('Invalid file path');
     }
+    logger.debug(`Resolved safe path for file: ${resolved}`); // DEBUG: Path resolution
     return resolved;
 }
 
@@ -48,14 +49,20 @@ type Connector = (params: Record<string, any>, options?: { maxRows?: number }) =
 
 // Registry for connectors (easy to add new ones, e.g., 'salesforce', 'google_sheets')
 const connectors = new Map<string, Connector>();
+logger.info(`Ingestion service initialized. Default MAX_ROWS: ${DEFAULT_MAX_ROWS}`); // INFO: Initialization
 
 // Register CSV connector
 connectors.set('csv', async (params, options = {}) => {
+    logger.debug('Attempting to register CSV connector'); // DEBUG: Registration
     const { filePath, delimiter } = params;
-    if (!filePath) throw new ConnectorError('filePath required for CSV');
+    if (!filePath) {
+        const error = new ConnectorError('filePath required for CSV');
+        logger.error(error.message); // ERROR: Missing parameter
+        throw error;
+    }
     const safeFilePath = getSafePath(filePath);
     const startTime = Date.now();
-    logger.debug(`CSV ingestion: ${safeFilePath}`, { options });
+    logger.debug(`CSV ingestion starting: ${safeFilePath}`, { options });
 
     const effectiveMaxRows = options.maxRows ?? DEFAULT_MAX_ROWS;
     const data: Record<string, any>[] = [];
@@ -81,30 +88,31 @@ connectors.set('csv', async (params, options = {}) => {
                     rowCount++;
                     if (rowCount > effectiveMaxRows) {
                         const err = new LimitExceededError(`Max rows: ${effectiveMaxRows}`);
-                        logger.warn(err.message, { safeFilePath, rowCount });
+                        logger.warn(err.message, { safeFilePath, rowCount }); // WARN: Limit exceeded
                         stream.destroy(err);
                         return reject(err);
                     }
                     data.push(row);
-                    if (rowCount % 1000 === 0) logger.debug(`Processed ${rowCount} rows`);
+                    if (rowCount % 1000 === 0) logger.debug(`Processed ${rowCount} rows`); // DEBUG: Progress log
                 })
                 .on('end', () => {
                     const duration = (Date.now() - startTime) / 1000;
-                    logger.info(`CSV ingested: ${rowCount} rows in ${duration}s`, { safeFilePath });
+                    logger.info(`CSV ingested: ${rowCount} rows in ${duration}s`, { safeFilePath }); // INFO: Completion
                     resolve(data);
                 })
                 .on('error', (err) => {
-                    logger.error(`CSV parse error: ${err.message}`, { stack: err.stack });
+                    logger.error(`CSV parse error: ${err.message}`, { stack: err.stack }); // ERROR: Parsing failure
                     reject(new ParsingError(`Parse failed: ${err.message}`, err));
                 });
         });
     } catch (err) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
             const accessErr = new FileAccessError(`File inaccessible: ${safeFilePath}`, err as Error);
-            logger.error(accessErr.message, { cause: accessErr.cause?.message });
+            logger.error(accessErr.message, { cause: accessErr.cause?.message }); // ERROR: File access
             throw accessErr;
         }
-        logger.error(`CSV pre-ingest error: ${(err as Error).message}`);
+        // This catch block handles unexpected pre-ingest errors (e.g., config/setup issues)
+        logger.emerg(`CSV pre-ingest FATAL error: ${(err as Error).message}`); // EMERG: Unexpected fatal error
         throw new IngestionError(`Ingestion failed: ${(err as Error).message}`, err as Error);
     }
 });
@@ -112,8 +120,16 @@ connectors.set('csv', async (params, options = {}) => {
 // Register HubSpot connector (uses private app token for auth)
 // connectors.set('hubspot', async (params, options = {}) => {
 //     const { objectType = 'contacts', properties = [] } = params;
-//     if (!HUBSPOT_ACCESS_TOKEN) throw new ConnectorError('HUBSPOT_ACCESS_TOKEN env required');
-//     if (!objectType) throw new ConnectorError('objectType required for HubSpot');
+//     if (!HUBSPOT_ACCESS_TOKEN) {
+//         const error = new ConnectorError('HUBSPOT_ACCESS_TOKEN env required');
+//         logger.error(error.message); // ERROR: Missing token
+//         throw error;
+//     }
+//     if (!objectType) {
+//         const error = new ConnectorError('objectType required for HubSpot');
+//         logger.error(error.message); // ERROR: Missing object type
+//         throw error;
+//     }
 
 //     const hubspot = new HubSpotClient({ accessToken: HUBSPOT_ACCESS_TOKEN });
 //     const effectiveMaxRows = options.maxRows ?? DEFAULT_MAX_ROWS;
@@ -121,15 +137,20 @@ connectors.set('csv', async (params, options = {}) => {
 //     let after: string | undefined;
 //     let fetched = 0;
 
-//     logger.debug(`HubSpot ingestion: ${objectType}`, { properties });
+//     logger.debug(`HubSpot ingestion starting for: ${objectType}`, { properties }); // DEBUG: Starting HubSpot
 
 //     try {
 //         while (true) {
+//             logger.debug(`HubSpot fetching next page, fetched: ${fetched}, after: ${after}`); // DEBUG: Pagination
+
 //             const response = await hubspot.crm[objectType].basicApi.getPage(100, after, properties, undefined, false);
 //             const results = response.results || [];
 
 //             for (const item of results) {
-//                 if (fetched >= effectiveMaxRows) throw new LimitExceededError(`Max rows: ${effectiveMaxRows}`);
+//                 if (fetched >= effectiveMaxRows) {
+//                     logger.warn(`HubSpot limit hit: ${effectiveMaxRows}`); // WARN: Limit hit
+//                     throw new LimitExceededError(`Max rows: ${effectiveMaxRows}`);
+//                 }
 //                 data.push(item.properties); // Extract properties as flat record
 //                 fetched++;
 //             }
@@ -138,10 +159,12 @@ connectors.set('csv', async (params, options = {}) => {
 //             after = response.paging.next.after;
 //         }
 
-//         logger.info(`HubSpot ingested: ${fetched} records from ${objectType}`);
+//         logger.info(`HubSpot ingested: ${fetched} records from ${objectType}`); // INFO: Completion
 //         return data;
 //     } catch (err) {
-//         logger.error(`HubSpot error: ${(err as Error).message}`, { stack: (err as Error).stack });
+//         if (err instanceof LimitExceededError) throw err; // Re-throw limit error
+
+//         logger.error(`HubSpot API error: ${(err as Error).message}`, { stack: (err as Error).stack }); // ERROR: API failure
 //         throw new ConnectorError(`HubSpot failed: ${(err as Error).message}`, err as Error);
 //     }
 // });
@@ -149,11 +172,24 @@ connectors.set('csv', async (params, options = {}) => {
 // Main ingestion function (dispatches to connector)
 
 export async function ingest(source: string, params: Record<string, any>, options?: { maxRows?: number }): Promise<Record<string, any>[]> {
+    logger.info(`Starting ingestion for source: ${source}`); // INFO: Dispatch start
     const connector = connectors.get(source.toLowerCase());
-    if (!connector) throw new ConnectorError(`Unsupported source: ${source}. Available: ${Array.from(connectors.keys()).join(', ')}`);
-    return connector(params, options);
+    if (!connector) {
+        const error = new ConnectorError(`Unsupported source: ${source}. Available: ${Array.from(connectors.keys()).join(', ')}`);
+        logger.error(error.message); // ERROR: Unsupported source
+        throw error;
+    }
+    try {
+        const result = await connector(params, options);
+        logger.debug(`Ingestion dispatch complete for ${source}`); // DEBUG: Dispatch complete
+        return result;
+    } catch (err) {
+        // Re-log the general failure at the dispatch level
+        logger.emerg(`Ingestion failed at dispatch level: ${(err as Error).message}`); // EMERG: Top-level failure
+        throw err;
+    }
 }
 
 // Usage example (for docs):
 // await ingest('csv', { filePath: 'data.csv' });
-// await ingest('hubspot', { objectType: 'contacts', properties: ['email', 'firstname'] });
+// await ingest('hubspot', { objectType: 'contacts', properties: ['email', 'firstname'] });`

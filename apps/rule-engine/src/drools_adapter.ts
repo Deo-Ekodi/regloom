@@ -10,7 +10,15 @@ import { logger } from '@regloom/utils';
 import { WeaveInput, ComplianceReport, ViolationDetail } from '@regloom/types';
 
 export async function evaluateCompliance(input: WeaveInput): Promise<ComplianceReport> {
+    logger.debug('Starting compliance evaluation process');
+
+    // Log initial parameters without exposing sensitive data
+    logger.info(`Received evaluation request for ${input.data.length} records. Regulations: ${input.regulations.join(', ')}`);
+
     const rules = await loadRules(input.regulations);
+
+    logger.debug(`Rule loading complete. Total rules loaded: ${rules.length}`);
+
     if (rules.length === 0) {
         logger.warn('No rules loaded; assuming compliant');
         return {
@@ -26,8 +34,14 @@ export async function evaluateCompliance(input: WeaveInput): Promise<ComplianceR
     const violations: ViolationDetail[] = [];
     for (let i = 0; i < input.data.length; i++) {
         const record = input.data[i];
+
+        logger.debug(`Evaluating record index ${i}`);
+
         try {
             const { events } = await engine.run(record);
+
+            logger.debug(`Record ${i} evaluation complete. Detected ${events.length} events.`);
+
             events.forEach((event) => {
                 violations.push({
                     regulation: event.params?.regulation || 'unknown',
@@ -40,7 +54,11 @@ export async function evaluateCompliance(input: WeaveInput): Promise<ComplianceR
                 });
             });
         } catch (err) {
-            logger.error(`Error evaluating record ${i}: ${(err as Error).message}`);
+            // Use 'error' level for execution failures that compromise the evaluation of a record.
+            logger.error(`Error evaluating record ${i}: ${(err as Error).message}`, {
+                recordIndex: i,
+                errorDetail: (err as Error).stack
+            });
             violations.push({
                 regulation: 'system',
                 ruleId: 'eval_error',
@@ -56,7 +74,8 @@ export async function evaluateCompliance(input: WeaveInput): Promise<ComplianceR
     const compliant = violations.length === 0;
     const score = Math.max(0, 100 - (violations.length * 5)); // Adjustable formula
 
-    logger.info(`Compliance eval: ${compliant ? 'Passed' : 'Failed'} with ${violations.length} violations`);
+    // Final summary log
+    logger.info(`Compliance eval complete. Status: ${compliant ? 'Passed' : 'Failed'} with ${violations.length} violations (Score: ${score})`);
 
     return {
         compliant,

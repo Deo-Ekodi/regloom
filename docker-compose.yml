@@ -84,15 +84,28 @@ services:
       retries: 20
       start_period: 30s
 
-  # Uncomment when synth-gen is ready
-  # synth-gen:
-  # build:
-  # context: .
-  # dockerfile: apps/synth-gen/Dockerfile
-  # ports:
-  # - "4003:4003"
-  # environment:
-  # - PYTHONUNBUFFERED=1
+  synth-gen:
+    build:
+      context: .
+      dockerfile: apps/synth-gen/Dockerfile
+      target: ${BUILD_TARGET:-dev}   # use prod in CI
+    ports:
+      - "4003:4003"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - .:/app
+      - ./logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:4003/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 10s
+    depends_on:
+      redis:
+        condition: service_healthy
+
   # ========================== DAPR SIDECARS (Zero-trust comms) ==========================
   dapr-backend:
     image: daprio/daprd:latest
@@ -164,6 +177,32 @@ services:
       - "4002"
       - "--dapr-http-port"
       - "${DAPR_PRIVACY_ENGINE_HTTP_PORT:-3502}"
+      - "--resources-path"
+      - "/components"
+      - "--log-level"
+      - "warn"
+    volumes:
+      - ./infra/dapr/components:/components
+    # attach: false
+    # logging:
+    #   driver: "none"
+
+  dapr-synth-gen:
+    image: daprio/daprd:latest
+    network_mode: "service:synth-gen"
+    depends_on:
+      synth-gen:
+        condition: service_healthy
+    environment:
+      - DAPR_SYNTH_GEN_HTTP_PORT=${DAPR_SYNTH_GEN_HTTP_PORT:-3503}
+    command:
+      - "./daprd"
+      - "--app-id"
+      - "regloom-synth-gen"
+      - "--app-port"
+      - "4003"
+      - "--dapr-http-port"
+      - "${DAPR_SYNTH_GEN_HTTP_PORT:-3503}"
       - "--resources-path"
       - "/components"
       - "--log-level"

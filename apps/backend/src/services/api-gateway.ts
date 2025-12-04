@@ -19,9 +19,6 @@ const upload = multer({
     limits: { fileSize: parseInt(process.env.MAX_UPLOAD_SIZE || '104857600', 10) }, // Default 100MB limit
 });
 
-// Basic health check schema (example)
-const healthSchema = z.object({});
-
 // Auth schemas (imported or defined in auth.ts, referenced here)
 import { loginSchema, registerSchema } from './auth';
 
@@ -49,28 +46,42 @@ const weaveSchema = z.object({
 // Validation middleware factory
 const validate = (schema: z.ZodSchema) => (req: Request, res: Response, next: NextFunction) => {
     try {
+        logger.debug(`Validating request body for route: ${req.path}`); // DEBUG: Start validation
         schema.parse(req.body);
+        logger.debug(`Validation successful for route: ${req.path}`); // DEBUG: Validation success
         next();
     } catch (err) {
         if (err instanceof z.ZodError) {
-            logger.warn(`Validation error: ${err.message}`, { issues: err.issues });
+            logger.warn(`Validation error: ${err.message}`, { issues: err.issues, path: req.path }); // WARNING: Validation failure
             return res.status(400).json({ error: 'Invalid input', details: err.issues });
         }
+        logger.error(`Unexpected validation middleware error: ${(err as Error).message}`, { stack: (err as Error).stack, path: req.path }); // ERROR: Unhandled exception in middleware
         next(err);
     }
 };
 
 export default function setupApiGateway(app: Application) {
+    logger.info('Starting API Gateway setup...'); // INFO: Start setup
+
     // Auth routes (public)
     app.post('/auth/register', validate(registerSchema), (req: Request, res: Response) => {
+        logger.debug('Route hit: /auth/register'); // DEBUG: Route hit
         // Call auth service register
-        import('./auth').then(({ register }) => register(req, res));
+        import('./auth').then(({ register }) => {
+            logger.debug('Register service imported and called.'); // DEBUG: Service call
+            register(req, res);
+        });
     });
     app.post('/auth/login', validate(loginSchema), (req: Request, res: Response) => {
+        logger.debug('Route hit: /auth/login'); // DEBUG: Route hit
         // Call auth service login
-        import('./auth').then(({ login }) => login(req, res));
+        import('./auth').then(({ login }) => {
+            logger.debug('Login service imported and called.'); // DEBUG: Service call
+            login(req, res);
+        });
     });
     app.post('/auth/dev-login', (req: Request, res: Response) => {
+        logger.warn('Route hit: /auth/dev-login (Development Login)'); // WARNING: Dev route usage
         // Call auth service devLogin (no validation needed)
         import('./auth').then(({ devLogin }) => devLogin(req, res));
     });
@@ -78,22 +89,26 @@ export default function setupApiGateway(app: Application) {
     // --- DAPR PUBLIC ROUTES (MUST BE UNPROTECTED) ---
     // This fixes the Dapr 401 subscription error
     app.get('/dapr/subscribe', (req: Request, res: Response) => {
+        logger.debug('Route hit: /dapr/subscribe'); // DEBUG: Route hit
         // Return an empty array if this service doesn't subscribe to any topic
         res.status(200).json([]);
     });
 
     // Protected routes with auth middleware
     app.use(authMiddleware);
+    logger.info('Auth middleware applied to subsequent routes.'); // INFO: Middleware applied
 
     // Ingestion route (now handles file upload for 'csv' and uses generic 'ingest')
     app.post('/ingest', upload.single('file'), validate(ingestionSchema), async (req: Request, res: Response, next: NextFunction) => {
+        logger.info('Route hit: /ingest'); // INFO: Route hit
         // 1. Get validated body data
         const { source, regulations } = req.body;
+        logger.debug(`Ingestion attempt initiated. Source: ${source}`); // DEBUG: Start ingestion
 
         // 2. Check for required file if source is 'csv' (or similar file-based sources)
         // We assume file upload is only necessary for CSV for simplicity
         if (source === 'csv' && !req.file) {
-            logger.warn(`No file uploaded for file-based ingestion: ${source}`);
+            logger.warn(`No file uploaded for file-based ingestion: ${source}`); // WARNING: Missing file
             return res.status(400).json({ error: `File required for ${source} ingestion` });
         }
 
@@ -105,16 +120,20 @@ export default function setupApiGateway(app: Application) {
         if (req.file) {
             filePath = req.file.path;
             ingestionParams.filePath = filePath;
+            logger.debug(`File uploaded successfully to: ${filePath}`); // DEBUG: File upload info
         }
 
         try {
             // 4. Call the generic 'ingest' function. 
             // The ingest function in ingestion.ts will look at 'source' to call the right connector.
+            logger.debug(`Calling ingest function for source: ${source}`); // DEBUG: Function call
             const ingestedData = await ingest(source, ingestionParams);
+            logger.info(`Ingestion successful. Source: ${source}, Records: ${ingestedData.length}`); // INFO: Success
 
             // 5. Clean up temp file (only relevant for file uploads)
             if (filePath) {
                 await fs.unlink(filePath);
+                logger.debug(`Cleaned up temporary file: ${filePath}`); // DEBUG: Cleanup success
             }
 
             res.status(200).json({
@@ -127,10 +146,11 @@ export default function setupApiGateway(app: Application) {
             });
 
         } catch (err) {
-            logger.error(`Ingestion error: ${(err as Error).message}`, { stack: (err as Error).stack });
+            logger.error(`Ingestion error: ${(err as Error).message}`, { stack: (err as Error).stack }); // ERROR: Ingestion runtime failure
 
             // Attempt to clean up the file on failure
             if (filePath) {
+                // IMPORTANT: The existing code uses logger.warn for cleanup failure, which is appropriate.
                 await fs.unlink(filePath).catch((unlinkErr) => logger.warn(`Failed to clean up file: ${unlinkErr.message}`));
             }
 
@@ -140,7 +160,9 @@ export default function setupApiGateway(app: Application) {
 
     // Weave route
     app.post('/weave', validate(weaveSchema), (req: Request, res: Response) => {
+        logger.info('Route hit: /weave'); // INFO: Route hit
         handleWeave(req, res);
+        logger.debug('Weave process dispatched to controller.'); // DEBUG: Controller dispatch
     });
 
     logger.info('API Gateway routes configured');

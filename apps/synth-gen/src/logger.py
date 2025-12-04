@@ -1,3 +1,10 @@
+# apps/synth-gen/logger.py
+# Structured logger for Synth-Gen using structlog.
+# Aligns with Node.js Winston logger: Levels (debug/info/warn/error), JSON in prod,
+# colored console in dev, file persistence. Handles exc_info, custom fields.
+# Configured via env: LOG_LEVEL, NODE_ENV, SERVICE_NAME, LOG_DIR.
+# Best practices: Thread-safe, efficient, no globals beyond logger instance.
+
 import logging
 import os
 import structlog
@@ -15,11 +22,11 @@ def setup_logger() -> structlog.BoundLogger:
     try:
         os.makedirs(log_dir, exist_ok=True)
     except OSError as e:
-        print(f"Warning: Could not create log dir {log_dir}: {e}")
+        print(f"Warning: Could not create log dir {log_dir}: {e}")  # Fallback to stdout
 
     filename = os.path.join(log_dir, f"{service_name}-regloom.log" if service_name else "regloom.log")
 
-    # Processors for structlog (Winston-like: timestamp, label, errors, etc.)
+    # Processors for structlog (timestamp, level, errors, etc.)
     shared_processors: list[Processor] = [
         structlog.stdlib.filter_by_level,
         structlog.stdlib.add_logger_name,
@@ -44,13 +51,13 @@ def setup_logger() -> structlog.BoundLogger:
         cache_logger_on_first_use=True,
     )
 
-    # Add file handler for persistent logging (JSON in prod)
+    # Add file handler for persistent logging
     file_handler = logging.FileHandler(filename, mode="a")
     file_handler.setLevel(log_level)
     if not is_dev:
         file_handler.setFormatter(logging.Formatter("%(message)s"))  # Structlog handles JSON
 
-    # Console handler (already handled by structlog)
+    # Console handler
     console_handler = logging.StreamHandler()
     console_handler.setLevel(log_level)
 
