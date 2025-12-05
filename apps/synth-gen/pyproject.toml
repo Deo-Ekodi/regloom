@@ -9,7 +9,6 @@ packages = [{include = "src", from = "."}]
 
 [tool.poetry.dependencies]
 python = "^3.12,<3.13"
-tensorflow-cpu = "^2.20.0"
 numpy = "^1.26.4"
 pandas = "^2.2.2"
 scikit-learn = "^1.5.0"
@@ -22,12 +21,19 @@ structlog = "^24.4.0"
 torch = { version = "2.2.2", source = "pytorch-cpu" }
 torchvision = { version = "0.17.2", source = "pytorch-cpu" }
 torchaudio = { version = "2.2.2", source = "pytorch-cpu" }
+uvicorn = "^0.38.0"
+fastapi = "^0.123.9"
+pydantic = "^2.12.5"
+poetry = "^2.2.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"
 black = "^24.8.0"
 mypy = "^1.11.2"
 ruff = "^0.6.5"
+opentelemetry-api = "^1.39.0"
+opentelemetry-sdk = "^1.39.0"
+opentelemetry-instrumentation-fastapi = "^0.60b0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -40,8 +46,6 @@ line-length = 120
 strict = true
 ignore_missing_imports = true
 
-# CRITICAL FIX: Changed to array of tables (double brackets)
-# This is the correct TOML syntax for defining custom package repositories in Poetry.
 [[tool.poetry.source]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"

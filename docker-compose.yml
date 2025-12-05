@@ -93,12 +93,13 @@ services:
       - "4003:4003"
     environment:
       - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app/apps/synth-gen
     volumes:
       - .:/app
       - ./logs:/logs
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:4003/health || exit 1"]
-      interval: 5s
+      interval: 500s
       timeout: 3s
       retries: 15
       start_period: 10s

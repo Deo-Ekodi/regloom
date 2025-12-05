@@ -55,14 +55,12 @@ services:
 
   synth-gen:
       volumes:
-        # Mount monorepo root (host) to /app (container)
         - .:/app
-        # Mount logs volume
         - ./logs:/logs
       environment:
         - SERVICE_NAME=synth-gen
         - LOG_LEVEL=debug
         - LOG_DIR=/logs
         - NODE_ENV=development
-      # Override the default command to use the hot-reload command from the 'dev' stage of the Dockerfile
-      command: poetry run uvicorn main:app --host 0.0.0.0 --port 4003 --reload --log-level debug
+        - PYTHONPATH=/app/apps/synth-gen
+      command: uvicorn apps.synth-gen.main:app --host 0.0.0.0 --port 4003 --reload --log-level debug

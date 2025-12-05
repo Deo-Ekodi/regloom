@@ -1,4 +1,4 @@
-# apps/synth-gen/logger.py
+# apps/synth-gen/src/logger.py
 # Structured logger for Synth-Gen using structlog.
 # Aligns with Node.js Winston logger: Levels (debug/info/warn/error), JSON in prod,
 # colored console in dev, file persistence. Handles exc_info, custom fields.

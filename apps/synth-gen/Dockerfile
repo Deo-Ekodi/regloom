@@ -1,212 +1,122 @@
-# # syntax=docker/dockerfile:1.7
-# # BuildKit REQUIRED — this is nuclear-grade
-
-# # ─────────────────────────────────────
-# # Base: shared setup
-# FROM python:3.12-slim AS base
-# RUN apt-get update && apt-get install -y --no-install-recommends \
-#     curl git ca-certificates \
-#     && rm -rf /var/lib/apt/lists/*
-
-# WORKDIR /app
-
-# # Persistent cache dirs (survive reboots, CI, Railway)
-# RUN mkdir -p /logs /root/.cache/pip /root/.cache/pypoetry && \
-#     chown -R nobody:nogroup /logs /root/.cache
-
-# # ─────────────────────────────────────
-# # Fetcher: Download ALL deps ONCE — cached forever
-# FROM base AS fetcher
-
-# # 1. Install Poetry 2.x
-# RUN pip install --no-cache-dir poetry==2.2.1
-
-# # 2. CRITICAL FIX: Install the export plugin (Required for Poetry 2.x)
-# RUN poetry self add poetry-plugin-export
-
-# # 3. Max resilience settings
-# RUN poetry config virtualenvs.create false && \
-#     poetry config installer.max-workers 4 && \
-#     poetry config installer.parallel true
-
-# # Copy only lockfiles — this layer is cached forever if unchanged
-# COPY apps/synth-gen/pyproject.toml apps/synth-gen/poetry.lock* ./apps/synth-gen/
-
-# # ── PROD deps: cached forever, with retry logic
-# # We use 'poetry export' to generate requirements.txt, then pip to install.
-# # This is more robust against network timeouts than 'poetry install'.
-# RUN --mount=type=cache,id=pip-cache,target=/root/.cache/pip \
-#     --mount=type=cache,id=pypoetry-cache,target=/root/.cache/pypoetry \
-#     cd apps/synth-gen && \
-#     echo "Exporting prod requirements..." && \
-#     poetry export -f requirements.txt --without-hashes --only main > /tmp/requirements-prod.txt && \
-#     echo "Installing prod deps with retry..." && \
-#     for i in 1 2 3; do \
-#         pip install --no-cache-dir --timeout 100 --target=/install-prod -r /tmp/requirements-prod.txt && break || \
-#         echo "Retry $i failed, waiting 10s..." && sleep 10; \
-#     done
-
-# # ── DEV deps: also cached forever
-# RUN --mount=type=cache,id=pip-cache,target=/root/.cache/pip \
-#     --mount=type=cache,id=pypoetry-cache,target=/root/.cache/pypoetry \
-#     cd apps/synth-gen && \
-#     echo "Exporting dev requirements..." && \
-#     poetry export -f requirements.txt --without-hashes --with dev > /tmp/requirements-dev.txt && \
-#     echo "Installing dev deps with retry..." && \
-#     for i in 1 2 3; do \
-#         pip install --no-cache-dir --timeout 100 --target=/install-dev -r /tmp/requirements-dev.txt && break || \
-#         echo "Retry $i failed, waiting 10s..." && sleep 10; \
-#     done
-
-# # ─────────────────────────────────────
-# # Prod image — tiny, offline, perfect
-# FROM python:3.12-slim AS prod
-# RUN mkdir -p /logs && chown -R nobody:nogroup /logs && chmod 777 /logs
-# WORKDIR /app/apps/synth-gen
-
-# # Copy ONLY prod packages
-# COPY --from=fetcher /install-prod /usr/local/lib/python3.12/site-packages
-
-# # Copy source
-# COPY apps/synth-gen/. .
-
-# ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
-#     PATH="/usr/local/lib/python3.12/site-packages/bin:$PATH"
-
-# USER nobody
-# EXPOSE 4003
-# HEALTHCHECK CMD curl -f http://localhost:4003/health || exit 1
-# CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "4003"]
-
-# # ─────────────────────────────────────
-# # Dev image — hot reload, FULLY OFFLINE after first build
-# FROM python:3.12-slim AS dev
-# RUN apt-get update && apt-get install -y --no-install-recommends git curl && rm -rf /var/lib/apt/lists/*
-
-# WORKDIR /app/apps/synth-gen
-
-# # Copy ALL deps (prod + dev) from fetcher — 100% offline
-# COPY --from=fetcher /install-dev /usr/local/lib/python3.12/site-packages
-
-# # Note: Source code is NOT copied here because it is mounted via volume in docker-compose
-# # But we allow copying it as a fallback
-# COPY apps/synth-gen/. .
-
-# ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
-#     PATH="/usr/local/lib/python3.12/site-packages/bin:$PATH"
-
-# USER nobody
-# EXPOSE 4003
-# CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "4003", "--reload", "--log-level", "debug"]
-
-
-
-# syntax=docker/dockerfile:1.7
-
-###############################################################
-# BASE (shared)
-###############################################################
+# syntax=docker/dockerfile:1
+# /apps/synth-gen/Dockerfile
+#################################################################
+# BASE – Shared OS environment
+#################################################################
 FROM python:3.12-slim AS base
-
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PATH="/usr/local/bin:${PATH}"
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl git ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+# ⚡ OPTIMIZATION: usage of sharing=locked prevents the "held by process 0" error
+# We separate /var/cache/apt and /var/lib/apt to ensure total caching without corruption
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    build-essential \
+    libpq-dev && \
+    rm -f /etc/apt/apt.conf.d/docker-clean
 
+    # Unify user with Node services (uid/gid 1000) for shared /logs perms
+RUN addgroup --gid 1000 node && \
+    adduser --uid 1000 --gid 1000 --disabled-password --gecos "" node
+
+    # Create /logs with unified perms (helps if volume empty)
+RUN mkdir -p /logs && \
+    chown -R node:node /logs && \
+    chmod -R 777 /logs
 WORKDIR /app
 
-RUN mkdir -p /root/.cache/pip /root/.cache/pypoetry /logs && \
-    chown -R nobody:nogroup /logs
-
-###############################################################
-# FETCHER (single download pass)
-###############################################################
+#################################################################
+# FETCHER – The Heavy Lifter (Cached & Offline)
+#################################################################
 FROM base AS fetcher
 
-# Install Poetry (build stage only)
-RUN pip install --no-cache-dir poetry==2.2.1
-RUN poetry self add poetry-plugin-export
+# Install poetry efficiently
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install poetry==2.2.1 && \
+    poetry self add poetry-plugin-export && \
+    poetry config virtualenvs.create false
 
-RUN poetry config virtualenvs.create false && \
-    poetry config installer.max-workers 6 && \
-    poetry config installer.parallel true
-
-# Copy lockfiles ONLY (max layer cache)
-COPY apps/synth-gen/pyproject.toml apps/synth-gen/poetry.lock ./apps/synth-gen/
-
+    # Copy ONLY necessary files for dependency resolution
+COPY --link apps/synth-gen/pyproject.toml apps/synth-gen/poetry.lock /app/apps/synth-gen/
 WORKDIR /app/apps/synth-gen
 
-# ----- 1 EXPORT ONLY ONCE -----
-RUN poetry export -f requirements.txt --without-hashes --with dev > /tmp/requirements-all.txt
+# 1. Export requirements (fast)
+RUN poetry export -f requirements.txt --without-hashes --with dev > /tmp/requirements-all.txt && \
+    poetry export -f requirements.txt --without-hashes --only main > /tmp/requirements-prod.txt
 
-# ----- SINGLE INSTALL -----
-RUN --mount=type=cache,id=pip-cache,target=/root/.cache/pip \
-    pip install --no-cache-dir --timeout 200 \
-        --target=/install-all \
-        -r /tmp/requirements-all.txt
+# 2. Build Wheels (SAVES CPU LATER)
+# This step utilizes CPU cores to compile C-extensions now, so we just "unzip" them later.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    mkdir -p /wheelhouse && \
+    pip wheel --wheel-dir=/wheelhouse -r /tmp/requirements-all.txt
 
-# ----- SPLIT PROD -----
-RUN mkdir -p /install-prod && \
-    python - <<'EOF'
-import pkgutil, shutil, pathlib
+#################################################################
+# PROD IMAGE
+#################################################################
+FROM base AS prod
+WORKDIR /app
 
-src = pathlib.Path("/install-all")
-dst = pathlib.Path("/install-prod")
+# 1. Install Dependencies from Wheels (FAST & OFFLINE)
+# We bind mount the wheelhouse so we don't actually copy the heavy tarballs, just install them.
+RUN --mount=type=bind,from=fetcher,source=/wheelhouse,target=/wheelhouse \
+    --mount=type=bind,from=fetcher,source=/tmp/requirements-prod.txt,target=/tmp/requirements.txt \
+    pip install --no-index --find-links=/wheelhouse -r /tmp/requirements.txt
 
-# dev packages to exclude
-exclude = {
-    "black","pytest","mypy","ruff"
-}
 
-for pkg in pkgutil.iter_modules([str(src)]):
-    if pkg.name not in exclude:
-        p = src / pkg.name
-        dest = dst / pkg.name
-        if p.is_dir():
-            shutil.copytree(p, dest, dirs_exist_ok=True)
-        else:
-            shutil.copy2(p, dest)
-EOF
+# 1B. Install spaCy model for Presidio (CACHED + SAFE)
+RUN python -m spacy download en_core_web_lg
+    
+# 2. Copy Source Code
+COPY --link apps/synth-gen /app
 
-###############################################################
-# PROD IMAGE (no Poetry here)
-###############################################################
-FROM python:3.12-slim AS prod
+# 3. Permissions
+# We set ownership to 'node' (unified uid 1000)
+RUN chown -R node:node /app
+USER node
 
-RUN mkdir -p /logs && chmod 777 /logs
-WORKDIR /app/apps/synth-gen
-
-# Copy ONLY prod deps
-COPY --from=fetcher /install-prod /usr/local/lib/python3.12/site-packages
-
-# Copy source code
-COPY apps/synth-gen/. .
-
-USER nobody
+# 4. Runtime Config
+ENV PORT=4003
 EXPOSE 4003
-HEALTHCHECK CMD curl -f http://localhost:4003/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:4003/health || exit 1
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "4003", "--workers", "4"]
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "4003"]
+#################################################################
+# DEV IMAGE
+#################################################################
+FROM base AS dev
 
-###############################################################
-# DEV IMAGE (hot reload, fully offline)
-###############################################################
-FROM python:3.12-slim AS dev
+# Dev tooling (git, curl already in base, but ensuring robust dev env)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    openssh-client \
+    vim
 
-RUN apt-get update && apt-get install -y --no-install-recommends git curl && \
-    rm -rf /var/lib/apt/lists/*
+# Install Poetry for dev interactions
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install poetry==2.2.1
+WORKDIR /app
 
-WORKDIR /app/apps/synth-gen
+# Install ALL dependencies (Dev + Prod) from Wheels
+RUN --mount=type=bind,from=fetcher,source=/wheelhouse,target=/wheelhouse \
+    --mount=type=bind,from=fetcher,source=/tmp/requirements-all.txt,target=/tmp/requirements.txt \
+    pip install --no-index --find-links=/wheelhouse -r /tmp/requirements.txt
 
-# Copy all deps (prod + dev)
-COPY --from=fetcher /install-all /usr/local/lib/python3.12/site-packages
+# Copy source (will be shadowed by volume in docker-compose, but exists for standalone run)
+RUN python -m spacy download en_core_web_lg
 
-# Copy source (fallback — compose overrides it)
-COPY apps/synth-gen/. .
+COPY --link apps/synth-gen /app
 
-USER nobody
+# Ensure logs dir is writable by the user we switch to
+RUN chown -R node:node /app /logs
+USER node
 EXPOSE 4003
-
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "4003", "--reload", "--log-level", "debug"]
