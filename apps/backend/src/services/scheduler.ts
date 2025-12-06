@@ -8,7 +8,7 @@
 // • Real URLs, real feeds, real logging
 
 import cron from 'cron';
-import axios from 'axios';
+import { axios } from '@regloom/utils';
 import * as xml2js from 'xml2js';
 import { logger } from '@regloom/utils';
 import { publishEvent, RegLoomEvent } from './event-bus';

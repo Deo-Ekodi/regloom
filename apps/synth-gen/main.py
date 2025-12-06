@@ -16,6 +16,7 @@ import os
 import datetime
 import signal
 from contextlib import asynccontextmanager
+import uuid
 
 from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -26,7 +27,7 @@ import pandas as pd
 
 from src.gan_model import generate_synth
 from src.anomaly_detector import detect_pii, detect_bias
-from src.logger import logger
+from src.logger import logger, run_with_request_context
 
 # ================================
 # LIFESPAN: Graceful startup/shutdown
@@ -132,61 +133,108 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ================================
 @app.post("/synthesize", status_code=status.HTTP_200_OK)
 async def synthesize(req: SynthRequest, request: Request):
-    request_id = request.headers.get("X-Request-ID", "unknown")
-    logger.info("Synthesize request received", request_id=request_id, input_rows=len(req.data))
+    # 1. Generate or Retrieve Request ID
+    request_id = (
+        request.headers.get("x-request-id") or           # Axios lowercase
+        request.headers.get("X-Request-ID") or           # Some proxies uppercase
+        request.headers.get("X-Request-Id") or           # Mixed case
+        request.headers.get("traceparent", "").split("-")[1] if "traceparent" in request.headers else
+        None
+    )
+    if not request_id:
+        request_id = f"synth-fallback-{uuid.uuid4().hex[:10]}"
+        logger.warning("No X-Request-ID header from upstream!", fallback_id=request_id)
+    else:
+        logger.debug("Received upstream request ID", upstream_request_id=request_id)
 
-    try:
-        df = pd.DataFrame(req.data)
-        if df.empty:
-            raise HTTPException(status_code=400, detail="Empty DataFrame after conversion")
+    # 2. Define the logic handler (Closure)
+    # This function contains your existing logic but runs inside the context wrapper
+    def handler():
+        logger.info("Synthesize request received", request_id=request_id, input_rows=len(req.data))
 
-        logger.debug("DataFrame created", shape=df.shape, columns=list(df.columns))
-
-        # Determine sample count
-        target_samples = req.num_samples or len(df) * 2
-        logger.info("Generating synthetic data", target_samples=target_samples, epochs=req.epochs)
-
-        synth_df = generate_synth(
-            real_data=df,
-            num_samples=target_samples,
-            epochs=req.epochs,
-            batch_size=req.batch_size
+        # --- NEW DEBUG LOG: Incoming Request Data ---
+        logger.debug("Incoming synthesis request body", 
+                     request_id=request_id,
+                     input_data_sample=req.data[:2], # Log only the first two records for brevity
+                     config={"num_samples": req.num_samples, "epochs": req.epochs}
         )
+        # ---------------------------------------------
 
-        # === PII + Bias Post-Checks ===
-        pii = detect_pii(synth_df)
-        bias_scores = detect_bias(synth_df, sensitive_cols=["age", "gender", "ethnicity", "race"], target_col="salary")
+        try:
+            df = pd.DataFrame(req.data)
+            if df.empty:
+                raise HTTPException(status_code=400, detail="Empty DataFrame after conversion")
 
-        high_bias = {k: v for k, v in bias_scores.items() if "dp" in k and v > 0.3}
+            logger.debug("DataFrame created", shape=df.shape, columns=list(df.columns))
 
-        if pii:
-            logger.warning("PII leaked into synthetic data", count=len(pii), sample=pii[:3])
-        if high_bias:
-            logger.warning("High demographic parity violation detected", high_bias=high_bias)
+            # Determine sample count
+            target_samples = req.num_samples or len(df) * 2
+            logger.info("Generating synthetic data", target_samples=target_samples, epochs=req.epochs)
 
-        result = {
-            "synthetic_data": synth_df.to_dict(orient="records"),
-            "generated_count": len(synth_df),
-            "pii_detected": bool(pii),
-            "pii_count": len(pii),
-            "bias_scores": bias_scores,
-            "high_bias_violations": high_bias,
-            "metadata": {
-                "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
-                "model": "CTGAN",
-                "request_id": request_id,
+            synth_df = generate_synth(
+                real_data=df,
+                num_samples=target_samples,
+                epochs=req.epochs,
+                batch_size=req.batch_size
+            )
+            
+            # --- NEW DEBUG LOG: Synthesized Data Sample ---
+            logger.debug("SYNTHETIC DATA GENERATED — SAMPLE (first 5 rows)",
+                         synthetic_sample=synth_df.head(5).to_dict(orient="records"),
+                         total_generated=len(synth_df),
+                         columns=list(synth_df.columns))
+            # ---------------------------------------------
+
+            # === PII + Bias Post-Checks ===
+            pii = detect_pii(synth_df)
+            bias_scores = detect_bias(synth_df, sensitive_cols=["age", "gender", "ethnicity", "race"], target_col="salary")
+
+            high_bias = {k: v for k, v in bias_scores.items() if "dp" in k and v > 0.3}
+
+            if pii:
+                logger.warning("PII leaked into synthetic data", count=len(pii), sample=pii[:3])
+            if high_bias:
+                logger.warning("High demographic parity violation detected", high_bias=high_bias)
+
+            result = {
+                "synthetic_data": synth_df.to_dict(orient="records"),
+                "generated_count": len(synth_df),
+                "pii_detected": bool(pii),
+                "pii_count": len(pii),
+                "bias_scores": bias_scores,
+                "high_bias_violations": high_bias,
+                "metadata": {
+                    "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+                    "model": "CTGAN",
+                    "request_id": request_id,
+                }
             }
-        }
+            
+            # --- NEW DEBUG LOG: Outgoing Response Payload ---
+            logger.debug("Outgoing synthesis response payload", 
+                         request_id=request_id,
+                         response_summary={
+                             "generated_count": result["generated_count"],
+                             "pii_detected": result["pii_detected"],
+                             "bias_violations": len(result["high_bias_violations"])
+                         }
+            )
+            # --------------------------------------------------
 
-        logger.info("Synthesis completed successfully", request_id=request_id, output_rows=len(synth_df))
-        return result
+            logger.info("Synthesis completed successfully", request_id=request_id, output_rows=len(synth_df))
+            return result
 
-    except ValueError as ve:
-        logger.warning("Validation error in synthesis", error=str(ve))
-        raise HTTPException(status_code=400, detail=f"Invalid input: {str(ve)}")
-    except Exception as e:
-        logger.error("Synthesis failed critically", exc_info=True, request_id=request_id)
-        raise HTTPException(status_code=500, detail="Synthetic data generation failed")
+        except ValueError as ve:
+            logger.warning("Validation error in synthesis", error=str(ve))
+            raise HTTPException(status_code=400, detail=f"Invalid input: {str(ve)}")
+        except Exception as e:
+            # NOTE: Unhandled exception is caught by the general_exception_handler, but we log here too for context
+            logger.error("Synthesis failed critically", exc_info=True, request_id=request_id)
+            raise HTTPException(status_code=500, detail="Synthetic data generation failed")
+
+    # 3. Execute the handler within the context manager wrapper
+    # This ensures 'request_id' is available to all internal logger calls automatically
+    return run_with_request_context(request_id, handler)
 
 # ================================
 # GRACEFUL SHUTDOWN HANDLING

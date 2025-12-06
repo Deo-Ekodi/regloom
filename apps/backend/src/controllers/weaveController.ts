@@ -6,58 +6,110 @@
 // Prod-grade: Async, logged, status codes, event publishing.
 
 import { Request, Response } from 'express';
-import axios from 'axios';
-import { WeaveInput, ComplianceReport } from '@regloom/types';
-import { logger } from '@regloom/utils';
+import { axios } from '@regloom/utils';
+import { WeaveInput, ComplianceReport, SynthGenResponse } from '@regloom/types';
+import { asyncLocalStorage, logger } from '@regloom/utils';
 import { publishEvent } from '../services/event-bus';
-import { ingest } from '../services/ingestion'; // Upgraded ingestion
+import { ingest } from '../services/ingestion';
 
 const ruleEngineUrl = process.env.RULE_ENGINE_BASE_URL || 'http://localhost:4001';
 const privacyEngineUrl = process.env.PRIVACY_ENGINE_BASE_URL || 'http://localhost:4002';
 const synthGenUrl = process.env.SYNTH_GEN_BASE_URL || 'http://localhost:4003';
 
 export async function handleWeave(req: Request, res: Response) {
+    const requestId = (asyncLocalStorage.getStore() as any)?.requestId || 'unknown';
+    logger.info('Weave request started', { requestId });
+
     let input: WeaveInput = req.body;
+
     try {
-        // Ingest if needed
+        // 1. Ingestion
         if (input.source !== 'direct') {
-            logger.info(`Ingesting from source: ${input.source}`);
+            logger.info('Ingesting data from source', { source: input.source, requestId });
             input.data = await ingest(input.source, input.connectorParams || {}, input.options);
         }
 
-        if (!input.data || input.data.length === 0) {
-            throw new Error('No data provided or ingested');
+        if (!input.data?.length) {
+            logger.warn('No data after ingestion', { requestId });
+            return res.status(400).json({ error: 'No data provided or ingested' });
         }
 
-        // Compliance check
-        const ruleResponse = await axios.post(`${ruleEngineUrl}/evaluate`, input, { timeout: 30000 });
-        const report: ComplianceReport = ruleResponse.data;
+        logger.info('Data ready for compliance check', { recordCount: input.data.length, requestId });
+
+        // 2. Compliance Check
+        const ruleResponse = await axios.post<ComplianceReport>(
+            `${ruleEngineUrl}/evaluate`,
+            input,
+            { timeout: 300_000 }
+        );
+        const report = ruleResponse.data;
+
+        logger.info('Compliance check completed', {
+            requestId,
+            compliant: report.compliant,
+            violations: report.violations.length,
+            score: report.score,
+        });
 
         if (!report.compliant) {
-            logger.warn('Compliance failed', { violations: report.violations });
-            return res.status(400).json(report);
+            await publishEvent('weave-failed', {
+                error: 'Compliance check failed',
+                userId: input.userId,
+                requestId,
+                timestamp: new Date().toISOString(),
+            });
+            return res.status(400).json({ report });
         }
 
-        // Synthesize
-        // const synthResponse = await axios.post(`${synthGenUrl}/synthesize`, { data: input.data }, { timeout: 60000 });
-        // const synthData = synthResponse.data;
-        const synthResponse = await axios.post(`${synthGenUrl}/synthesize`, { data: input.data }, { timeout: 60000 });
-        const synthDataArray = synthResponse.data.synthetic_data; // Array
+        // 3. Synthesis
+        const synthResponse = await axios.post<SynthGenResponse>(
+            `${synthGenUrl}/synthesize`,
+            { data: input.data },
+            { timeout: 600_000 }
+        );
+        const synthData = synthResponse.data.synthetic_data;
 
-        // Apply privacy
-        // const privacyResponse = await axios.post(`${privacyEngineUrl}/process`, { data: synthData }, { timeout: 30000 });
-        // const processedData = privacyResponse.data;
-        const privacyResponse = await axios.post(`${privacyEngineUrl}/process`, { data: synthDataArray }, { timeout: 30000 });
-        const processedData = privacyResponse.data.processedData;
+        logger.info('Synthesis completed', {
+            requestId,
+            generatedCount: synthResponse.data.generated_count,
+            piiDetected: synthResponse.data.pii_detected,
+        });
 
-        // Publish completion
-        await publishEvent('weave-completed', { output: processedData, report, userId: input.userId });
+        // 4. Privacy Engine
+        const privacyResponse = await axios.post(
+            `${privacyEngineUrl}/process`,
+            { data: synthData },
+            { timeout: 300_000 }
+        );
+        const processedOutput = privacyResponse.data;
 
-        logger.info('Weave completed');
-        res.status(200).json({ output: processedData, report });
-    } catch (err) {
-        const message = (err as Error).message;
-        logger.error(`Weave error: ${message}`, { stack: (err as Error).stack });
-        res.status(500).json({ error: message });
+        logger.info('Privacy engine completed', { requestId });
+
+        // 5. Publish Success
+        await publishEvent('weave-completed', {
+            output: processedOutput,
+            report,
+            userId: input.userId,
+            requestId,
+        });
+
+        logger.info('Weave completed successfully', { requestId });
+        res.json({ output: processedOutput, report });
+    } catch (err: any) {
+        const errorMsg = err.response?.data?.error || err.message || 'Unknown error';
+        logger.error('Weave failed', {
+            requestId,
+            error: errorMsg,
+            stack: err.stack,
+        });
+
+        await publishEvent('weave-failed', {
+            error: errorMsg,
+            userId: input.userId,
+            requestId,
+            timestamp: new Date().toISOString(),
+        });
+
+        res.status(err.response?.status || 500).json({ error: errorMsg });
     }
 }

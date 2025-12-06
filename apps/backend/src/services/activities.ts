@@ -3,7 +3,8 @@
 // All IO (network, FS) happens here. Retried/timeouted by Temporal.
 
 import { Context } from '@temporalio/activity';
-import axios from 'axios';
+import { axios } from '@regloom/utils';
+import * as AxiosModule from 'axios';
 import { logger } from '@regloom/utils';
 import { publishEvent } from './event-bus';
 import { WeaveInput, ComplianceReport } from '@regloom/types';
@@ -44,7 +45,7 @@ export const activities = {
         } catch (err) {
             logger.error('Compliance check failed', { error: (err as Error).message });
 
-            if (axios.isAxiosError(err) && err.code === 'ECONNREFUSED') {
+            if (AxiosModule.isAxiosError(err) && err.code === 'ECONNREFUSED') {
                 logger.emerg('Rule Engine connection refused. Critical service failure detected.', { url: RULE_ENGINE_URL }); // EMERGENCY example on critical network failure
             } else {
                 logger.warn('Compliance check threw a transient error (e.g., timeout or bad gateway). Temporal will retry.', { errorType: 'AxiosError' });

@@ -6,7 +6,7 @@
 import express, { Application } from 'express';
 import { logger } from '@regloom/utils'; // Shared logger
 import apiGateway from './services/api-gateway'; // Routing and validation setup
-import tracingMiddleware from './middlewares/tracing'; // Request tracing middleware
+import tracingMiddleware from '../../../packages/utils/src/tracing'; // Request tracing middleware
 import './services/workflow_worker';
 
 // Log start of application file processing
