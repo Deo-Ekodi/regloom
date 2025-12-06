@@ -86,12 +86,7 @@ export function runInContext<T>(
 export function getContext(): RequestContext {
     const store = asyncLocalStorage.getStore();
     if (!store) {
-        // This should never happen in production — but we recover gracefully
-        logger.warn('AsyncLocalStorage.getStore() returned undefined — running outside context!', {
-            stack: new Error().stack,
-        });
-
-        // Return a minimal fallback context so logging doesn't crash
+        // DO NOT LOG HERE — THIS IS THE SOURCE OF INFINITE RECURSION
         return {
             requestId: `fallback-${uuidv4().slice(0, 8)}`,
             source: 'unknown-fallback',
@@ -130,7 +125,4 @@ export default {
     getRequestId,
     getUserId,
     createRequestContext,
-    // Legacy support
-    getStore: getContext,
-    run: runInContext,
 };

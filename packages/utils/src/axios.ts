@@ -1,34 +1,34 @@
 // /app/packages/utils/src/axios.ts
-// Global Axios instance with automatic X-Request-ID propagation
-// Used by all services: weaveController, activities, ingestion, etc.
 import axios from 'axios';
-import { asyncLocalStorage } from '@regloom/utils';
-import { logger } from '@regloom/utils';
+import { getContext, logger } from '@regloom/utils';
 
 const instance = axios.create({
     timeout: 30000,
     validateStatus: (status) => status < 500, // Don't throw on 4xx
 });
 
-// Request interceptor: inject X-Request-ID from context
+// Request interceptor: inject X-Request-ID from real context
 instance.interceptors.request.use((config) => {
-    const store = asyncLocalStorage.getStore();
-    const requestId = store?.requestId;
+    const ctx = getContext();
+    const requestId = ctx.requestId;
 
-    if (requestId) {
-        config.headers = config.headers || {};
-        config.headers['X-Request-ID'] = requestId;
-        logger.debug('Propagating requestId to downstream service', {
-            requestId,
-            url: config.url,
-            method: config.method,
-        });
+    config.headers = config.headers || {};
+    config.headers['X-Request-ID'] = requestId;
+
+    if (ctx.userId) {
+        config.headers['X-User-ID'] = ctx.userId;
     }
+
+    logger.debug('Propagating requestId to downstream service', {
+        requestId,
+        url: config.url,
+        method: config.method?.toUpperCase(),
+    });
 
     return config;
 });
 
-// Response interceptor: log errors with requestId
+// Response interceptor: log with correct requestId
 instance.interceptors.response.use(
     (response) => {
         logger.debug('Downstream call succeeded', {
@@ -39,16 +39,17 @@ instance.interceptors.response.use(
         return response;
     },
     (error) => {
-        const requestId = error.config?.headers['X-Request-ID'];
+        const requestId = error.config?.headers?.['X-Request-ID'];
         logger.error('Downstream call failed', {
             requestId,
             url: error.config?.url,
+            method: error.config?.method?.toUpperCase(),
             status: error.response?.status,
             error: error.message,
+            data: error.response?.data,
         });
         return Promise.reject(error);
     }
 );
 
 export default instance;
-// export { default as tracedAxios } from './axios';

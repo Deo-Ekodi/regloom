@@ -8,7 +8,9 @@
 import { Request, Response } from 'express';
 import { axios } from '@regloom/utils';
 import { WeaveInput, ComplianceReport, SynthGenResponse } from '@regloom/types';
-import { asyncLocalStorage, logger } from '@regloom/utils';
+// import { asyncLocalStorage, logger } from '@regloom/utils';
+import { getRequestId, getUserId, logger } from '@regloom/utils';
+
 import { publishEvent } from '../services/event-bus';
 import { ingest } from '../services/ingestion';
 
@@ -17,8 +19,13 @@ const privacyEngineUrl = process.env.PRIVACY_ENGINE_BASE_URL || 'http://localhos
 const synthGenUrl = process.env.SYNTH_GEN_BASE_URL || 'http://localhost:4003';
 
 export async function handleWeave(req: Request, res: Response) {
-    const requestId = (asyncLocalStorage.getStore() as any)?.requestId || 'unknown';
-    logger.info('Weave request started', { requestId });
+    const requestId = getRequestId();
+    const userId = getUserId();
+    logger.info('Weave started', {
+        requestId,
+        userId,
+        source: req.body.source,
+    });
 
     let input: WeaveInput = req.body;
 
@@ -54,8 +61,6 @@ export async function handleWeave(req: Request, res: Response) {
         if (!report.compliant) {
             await publishEvent('weave-failed', {
                 error: 'Compliance check failed',
-                userId: input.userId,
-                requestId,
                 timestamp: new Date().toISOString(),
             });
             return res.status(400).json({ report });
@@ -89,8 +94,6 @@ export async function handleWeave(req: Request, res: Response) {
         await publishEvent('weave-completed', {
             output: processedOutput,
             report,
-            userId: input.userId,
-            requestId,
         });
 
         logger.info('Weave completed successfully', { requestId });
@@ -105,11 +108,10 @@ export async function handleWeave(req: Request, res: Response) {
 
         await publishEvent('weave-failed', {
             error: errorMsg,
-            userId: input.userId,
-            requestId,
             timestamp: new Date().toISOString(),
         });
 
         res.status(err.response?.status || 500).json({ error: errorMsg });
     }
 }
+

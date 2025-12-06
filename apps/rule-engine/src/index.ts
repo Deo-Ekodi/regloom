@@ -12,7 +12,7 @@ import { tracingMiddleware } from '@regloom/utils';
 
 const app: Application = express();
 app.use(express.json({ limit: '10mb' })); // Handle larger payloads
-app.use(tracingMiddleware); // Add tracing middleware
+app.use(tracingMiddleware);
 
 const PORT = process.env.RULE_ENGINE_PORT || 4001;
 

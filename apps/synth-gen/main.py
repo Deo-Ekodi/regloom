@@ -133,43 +133,38 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ================================
 @app.post("/synthesize", status_code=status.HTTP_200_OK)
 async def synthesize(req: SynthRequest, request: Request):
-    # 1. Generate or Retrieve Request ID
-    request_id = (
-        request.headers.get("x-request-id") or           # Axios lowercase
-        request.headers.get("X-Request-ID") or           # Some proxies uppercase
-        request.headers.get("X-Request-Id") or           # Mixed case
-        request.headers.get("traceparent", "").split("-")[1] if "traceparent" in request.headers else
-        None
-    )
+    # 1. Extract request_id (case-insensitive, FastAPI-normalized)
+    request_id = request.headers.get("x-request-id")
     if not request_id:
         request_id = f"synth-fallback-{uuid.uuid4().hex[:10]}"
         logger.warning("No X-Request-ID header from upstream!", fallback_id=request_id)
     else:
-        logger.debug("Received upstream request ID", upstream_request_id=request_id)
+        logger.debug("Inherited request ID from upstream", request_id=request_id)
 
-    # 2. Define the logic handler (Closure)
-    # This function contains your existing logic but runs inside the context wrapper
+    # 2. Extract user_id (optional)
+    user_id = request.headers.get("x-user-id")
+
+    # 3. Run everything in context — NO REASSIGNING logger!
     def handler():
-        logger.info("Synthesize request received", request_id=request_id, input_rows=len(req.data))
+        # Create a request-scoped logger with user_id (if present)
+        scoped_logger = logger
+        if user_id:
+            scoped_logger = scoped_logger.bind(user_id=user_id)
 
-        # --- NEW DEBUG LOG: Incoming Request Data ---
-        logger.debug("Incoming synthesis request body", 
-                     request_id=request_id,
-                     input_data_sample=req.data[:2], # Log only the first two records for brevity
-                     config={"num_samples": req.num_samples, "epochs": req.epochs}
-        )
-        # ---------------------------------------------
+        scoped_logger.info("Synthesize request received", input_rows=len(req.data))
+        scoped_logger.debug("Incoming synthesis request body",
+                            input_data_sample=req.data[:2],
+                            config={"num_samples": req.num_samples, "epochs": req.epochs})
 
         try:
             df = pd.DataFrame(req.data)
             if df.empty:
                 raise HTTPException(status_code=400, detail="Empty DataFrame after conversion")
 
-            logger.debug("DataFrame created", shape=df.shape, columns=list(df.columns))
+            scoped_logger.debug("DataFrame created", shape=df.shape, columns=list(df.columns))
 
-            # Determine sample count
             target_samples = req.num_samples or len(df) * 2
-            logger.info("Generating synthetic data", target_samples=target_samples, epochs=req.epochs)
+            scoped_logger.info("Generating synthetic data", target_samples=target_samples, epochs=req.epochs)
 
             synth_df = generate_synth(
                 real_data=df,
@@ -177,24 +172,21 @@ async def synthesize(req: SynthRequest, request: Request):
                 epochs=req.epochs,
                 batch_size=req.batch_size
             )
-            
-            # --- NEW DEBUG LOG: Synthesized Data Sample ---
-            logger.debug("SYNTHETIC DATA GENERATED — SAMPLE (first 5 rows)",
-                         synthetic_sample=synth_df.head(5).to_dict(orient="records"),
-                         total_generated=len(synth_df),
-                         columns=list(synth_df.columns))
-            # ---------------------------------------------
 
-            # === PII + Bias Post-Checks ===
+            scoped_logger.debug("SYNTHETIC DATA GENERATED — SAMPLE (first 5 rows)",
+                                synthetic_sample=synth_df.head(5).to_dict(orient="records"),
+                                total_generated=len(synth_df),
+                                columns=list(synth_df.columns))
+
+            # PII + Bias checks
             pii = detect_pii(synth_df)
             bias_scores = detect_bias(synth_df, sensitive_cols=["age", "gender", "ethnicity", "race"], target_col="salary")
-
             high_bias = {k: v for k, v in bias_scores.items() if "dp" in k and v > 0.3}
 
             if pii:
-                logger.warning("PII leaked into synthetic data", count=len(pii), sample=pii[:3])
+                scoped_logger.warning("PII leaked into synthetic data", count=len(pii), sample=pii[:3])
             if high_bias:
-                logger.warning("High demographic parity violation detected", high_bias=high_bias)
+                scoped_logger.warning("High demographic parity violation detected", high_bias=high_bias)
 
             result = {
                 "synthetic_data": synth_df.to_dict(orient="records"),
@@ -207,33 +199,28 @@ async def synthesize(req: SynthRequest, request: Request):
                     "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
                     "model": "CTGAN",
                     "request_id": request_id,
+                    "user_id": user_id,
                 }
             }
-            
-            # --- NEW DEBUG LOG: Outgoing Response Payload ---
-            logger.debug("Outgoing synthesis response payload", 
-                         request_id=request_id,
-                         response_summary={
-                             "generated_count": result["generated_count"],
-                             "pii_detected": result["pii_detected"],
-                             "bias_violations": len(result["high_bias_violations"])
-                         }
-            )
-            # --------------------------------------------------
 
-            logger.info("Synthesis completed successfully", request_id=request_id, output_rows=len(synth_df))
+            scoped_logger.debug("Outgoing synthesis response payload",
+                                response_summary={
+                                    "generated_count": result["generated_count"],
+                                    "pii_detected": result["pii_detected"],
+                                    "bias_violations": len(result["high_bias_violations"])
+                                })
+
+            scoped_logger.info("Synthesis completed successfully", output_rows=len(synth_df))
             return result
 
         except ValueError as ve:
-            logger.warning("Validation error in synthesis", error=str(ve))
+            scoped_logger.warning("Validation error in synthesis", error=str(ve))
             raise HTTPException(status_code=400, detail=f"Invalid input: {str(ve)}")
         except Exception as e:
-            # NOTE: Unhandled exception is caught by the general_exception_handler, but we log here too for context
-            logger.error("Synthesis failed critically", exc_info=True, request_id=request_id)
+            scoped_logger.error("Synthesis failed critically", exc_info=True)
             raise HTTPException(status_code=500, detail="Synthetic data generation failed")
 
-    # 3. Execute the handler within the context manager wrapper
-    # This ensures 'request_id' is available to all internal logger calls automatically
+    # 4. Execute with full context
     return run_with_request_context(request_id, handler)
 
 # ================================
@@ -264,3 +251,5 @@ if __name__ == "__main__":
         access_log=True,
         workers=1,  # Let Dapr + container manage scaling
     )
+
+

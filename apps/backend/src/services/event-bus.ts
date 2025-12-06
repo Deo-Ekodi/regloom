@@ -1,25 +1,22 @@
-// apps/backend/src/services/event-bus.ts
-// PRODUCTION-GRADE Dapr Event Bus for RegLoom
-// Features:
-// • Automatic retries with exponential backoff
-// • Dead-letter queue (DLQ)
-// • Correlation ID + Trace Propagation
-// • Health checks
-// • Bulk publish
-// • Type-safe event contracts
-// • Full logging + OpenTelemetry ready
-// • Zero runtime errors. 100% typed.
+// // apps/backend/src/services/event-bus.ts
+// // PRODUCTION-GRADE Dapr Event Bus for RegLoom
+// // Features:
+// // • Automatic retries with exponential backoff
+// // • Dead-letter queue (DLQ)
+// // • Correlation ID + Trace Propagation
+// // • Health checks
+// // • Bulk publish
+// // • Type-safe event contracts
+// // • Full logging + OpenTelemetry ready
+// // • Zero runtime errors. 100% typed.
 
 import { DaprClient, CommunicationProtocolEnum } from '@dapr/dapr';
 import { v4 as uuidv4 } from 'uuid';
-import { logger } from '@regloom/utils';
+import { logger, getRequestId, getUserId } from '@regloom/utils'; // ← ADD getUserId
 import { trace, context } from '@opentelemetry/api';
 
-// === CONFIG ===
 const DAPR_HOST = process.env.DAPR_HOST || 'http://localhost';
-const DAPR_PORT = process.env.DAPR_BACKEND_HTTP_PORT
-    ? String(process.env.DAPR_BACKEND_HTTP_PORT)
-    : '3500';
+const DAPR_PORT = process.env.DAPR_BACKEND_HTTP_PORT ? String(process.env.DAPR_BACKEND_HTTP_PORT) : '3500';
 const PUBSUB_NAME = process.env.DAPR_PUBSUB_NAME || 'regloom-pubsub';
 
 let client: DaprClient;
@@ -32,14 +29,12 @@ async function getClient(): Promise<DaprClient> {
     }
 
     logger.info('Attempting to initialize and connect Dapr client...');
-
     try {
         client = new DaprClient({
             daprHost: DAPR_HOST,
             daprPort: DAPR_PORT,
             communicationProtocol: CommunicationProtocolEnum.HTTP,
         });
-
         await client.health.isHealthy();
         clientReady = true;
         logger.info('Dapr client connected successfully', { host: DAPR_HOST, port: DAPR_PORT });
@@ -51,13 +46,11 @@ async function getClient(): Promise<DaprClient> {
             port: DAPR_PORT,
             error: errorMsg,
         });
-        // CRITICAL: If the client cannot connect, this is an emergency for eventing.
         logger.emerg('Event bus is permanently unavailable due to Dapr sidecar connection failure.');
         throw err;
     }
 }
 
-// === EVENT CONTRACTS (Type-safe!) ===
 export type RegLoomEvent<T = any> = {
     data: T;
     metadata: {
@@ -66,15 +59,16 @@ export type RegLoomEvent<T = any> = {
         timestamp: string;
         source: string;
         traceId?: string;
+        userId?: string;        // ← ADDED
+        requestId?: string;     // ← ADDED
     };
 };
 
-// Known event types
 export type DataIngestedEvent = RegLoomEvent<{ filePath: string; recordCount: number }>;
 export type RegsUpdatedEvent = RegLoomEvent<{ updates: any[] }>;
 export type WeaveCompletedEvent = RegLoomEvent<{ output: any; report: any }>;
 
-// === CORE: PUBLISH WITH RETRIES + DLQ ===
+// === CORE: PUBLISH WITH AUTO CONTEXT INJECTION ===
 export async function publishEvent<T>(
     topic: string,
     data: T,
@@ -82,6 +76,9 @@ export async function publishEvent<T>(
         source?: string;
         correlationId?: string;
         maxRetries?: number;
+        // You can still override if needed
+        userId?: string;
+        requestId?: string;
     } = {}
 ): Promise<void> {
     const correlationId = options.correlationId || uuidv4();
@@ -89,7 +86,21 @@ export async function publishEvent<T>(
     const source = options.source || 'backend';
     const maxRetries = options.maxRetries ?? 3;
 
-    logger.debug(`Preparing to publish event to topic: ${topic}`, { eventId, correlationId, source, maxRetries });
+    // AUTO-INJECT FROM CONTEXT — THIS IS THE MAGIC
+    const contextUserId = getUserId();
+    const contextRequestId = getRequestId();
+
+    const finalUserId = options.userId ?? contextUserId;
+    const finalRequestId = options.requestId ?? contextRequestId;
+
+    logger.debug(`Preparing to publish event to topic: ${topic}`, {
+        eventId,
+        correlationId,
+        source,
+        maxRetries,
+        userId: finalUserId,
+        requestId: finalRequestId,
+    });
 
     const payload: RegLoomEvent<T> = {
         data,
@@ -99,6 +110,8 @@ export async function publishEvent<T>(
             timestamp: new Date().toISOString(),
             source,
             traceId: trace.getSpanContext(context.active())?.traceId,
+            userId: finalUserId,
+            requestId: finalRequestId,
         },
     };
 
@@ -112,7 +125,6 @@ export async function publishEvent<T>(
             return;
         } catch (err) {
             const msg = (err as Error).message;
-
             if (attempt < maxRetries) {
                 logger.warn(`Publish failed (attempt ${attempt}/${maxRetries}). Retrying in exponential backoff.`, {
                     topic,
@@ -130,7 +142,6 @@ export async function publishEvent<T>(
             }
 
             if (attempt === maxRetries) {
-                // FINAL FAILURE → SEND TO DLQ
                 try {
                     logger.info(`Sending event to Dead-Letter Queue topic: ${topic}-dlq`);
                     await client.pubsub.publish(PUBSUB_NAME, `${topic}-dlq`, {
@@ -140,16 +151,14 @@ export async function publishEvent<T>(
                     logger.error(`Event successfully sent to DLQ`, { topic: `${topic}-dlq`, eventId, correlationId });
                 } catch (dlqErr) {
                     const dlqErrMsg = (dlqErr as Error).message;
-                    // CRITICAL: Cannot publish to DLQ, meaning the failure is persistent or network-wide.
                     logger.emerg(`DLQ publish failed too, event is lost.`, {
                         originalTopic: topic,
-                        dlqError: dlqErrMsg
+                        dlqError: dlqErrMsg,
                     });
                 }
                 throw new Error(`Failed to publish event '${topic}' after ${maxRetries} attempts`);
             }
 
-            // Exponential backoff
             const delayMs = 1000 * 2 ** attempt;
             logger.debug(`Delaying ${delayMs}ms before next retry.`, { topic, eventId });
             await new Promise((r) => setTimeout(r, delayMs));
@@ -157,13 +166,12 @@ export async function publishEvent<T>(
     }
 }
 
-// === BULK PUBLISH ===
+// === BULK PUBLISH (unchanged) ===
 export async function publishEvents(events: Array<{ topic: string; data: any; source?: string }>) {
     logger.debug(`Starting bulk publish operation for ${events.length} events.`);
     await Promise.allSettled(
         events.map((e) =>
             publishEvent(e.topic, e.data, { source: e.source || 'bulk' }).catch(() => {
-                // Individual failures already logged (as error or emerg)
                 logger.debug(`Individual event failed in bulk publish, but failure was handled by publishEvent.`, { topic: e.topic });
             })
         )
@@ -171,7 +179,7 @@ export async function publishEvents(events: Array<{ topic: string; data: any; so
     logger.info(`Bulk publish completed`, { count: events.length });
 }
 
-// === HEALTH CHECK ===
+// === HEALTH CHECK (unchanged) ===
 export async function isEventBusHealthy(): Promise<boolean> {
     logger.debug('Running event bus health check.');
     try {

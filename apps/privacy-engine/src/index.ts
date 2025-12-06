@@ -15,7 +15,8 @@ import { tracingMiddleware } from '@regloom/utils';
 const app: Application = express();
 app.use(express.json({ limit: '50mb' })); // Handle large payloads (e.g., batch data)
 app.use(express.urlencoded({ extended: true }));
-app.use(tracingMiddleware); // Add tracing middleware
+app.use(tracingMiddleware);
+
 logger.debug('Express middleware configured: JSON parser, URL-encoded body parser, and tracing middleware.');
 
 const PORT = process.env.PRIVACY_ENGINE_PORT || 4002;
@@ -389,3 +390,4 @@ process.on('SIGTERM', () => {
         process.exit(0);
     });
 });
+
