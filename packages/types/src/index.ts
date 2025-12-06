@@ -1,34 +1,123 @@
 // packages/types/src/index.ts
-// Shared types across RegLoom monorepo. Defines core interfaces for inputs and outputs with enhanced robustness.
-// Includes timestamps, user context, and detailed violation structures for better traceability and error handling.
+// ─────────────────────────────────────────────────────────────────────────────
+// RegLoom Shared Types – Monorepo-wide contract
+// Used by: backend, frontend, synth-gen, rule-engine, privacy-engine, Temporal workflows
+// ─────────────────────────────────────────────────────────────────────────────
 
+/** Core input for the entire weave saga – single source of truth */
 export interface WeaveInput {
-    data: Record<string, any>[]; // Raw data records to evaluate (array for batch processing, e.g., CSV rows)
-    regulations: string[]; // Array of regulation codes (e.g., ['gdpr', 'ccpa', 'kenya_dpa'])
-    userId: string; // User initiating the weave for auditing
-    timestamp: string; // ISO timestamp of input submission
-    source: string; // Data source identifier (e.g., 'direct', 'csv', 'hubspot')
-    connectorParams?: Record<string, any>; // Optional parameters for connectors (e.g., { filePath: 'uploads/data.csv' } for CSV, or { objectType: 'contacts', properties: ['email'] } for HubSpot)
+    /** Raw tabular records (CSV row, HubSpot contact, etc.) */
+    data: Record<string, any>[];
+
+    /** Regulation codes the dataset must comply with */
+    regulations: string[]; // e.g. ['gdpr', 'ccpa', 'kenya_dpa']
+
+    /** User who initiated the weave – mandatory for audit trail */
+    userId: string;
+
+    /** ISO-8601 timestamp of request submission */
+    timestamp: string;
+
+    /** Source identifier – used by ingestion service to pick connector */
+    source: 'direct' | 'csv' | 'hubspot' | 'salesforce' | string;
+
+    /** Connector-specific parameters (filePath, objectType, etc.) */
+    connectorParams?: Record<string, any>;
+
+    /** Optional overrides */
     options?: {
-        maxRows?: number; // Optional limit for large datasets
-        dryRun?: boolean; // Simulate without actual processing
+        /** Cap number of rows processed (default 1_000_000) */
+        maxRows?: number;
+
+        /** Simulate only – no side effects */
+        dryRun?: boolean;
+
+        /** Force number of synthetic rows (overrides 2× default) */
+        numSamples?: number;
+
+        /** Override CTGAN training params */
+        epochs?: number;
+        batchSize?: number;
+    };
+
+    /** Optional request ID for end-to-end tracing (X-Request-ID) */
+    requestId?: string;
+}
+
+/** Detailed violation – one per rule breach */
+export interface ViolationDetail {
+    regulation: string;           // e.g. 'gdpr'
+    ruleId: string;               // internal rule identifier
+    severity: 'low' | 'medium' | 'high' | 'critical';
+    description: string;          // human readable
+    affectedFields: string[];     // e.g. ['email', 'phone_number']
+    remediation: string;          // suggested fix
+    recordIndex?: number;         // row that violated (if applicable)
+}
+
+/** Compliance report returned by rule-engine */
+export interface ComplianceReport {
+    compliant: boolean;
+    violations: ViolationDetail[];
+    checkedAt: string;            // ISO-8601
+    score: number;                // 0–100
+    recommendations?: string[];
+}
+
+/** Exact shape synth-gen returns – used by backend + privacy-engine */
+export interface SynthGenResponse {
+    synthetic_data: Record<string, any>[];
+    generated_count: number;
+    pii_detected: boolean;
+    pii_count: number;
+    bias_scores: Record<string, number>;
+    high_bias_violations: Record<string, number>;
+    metadata: {
+        generated_at: string;
+        model: string;
+        request_id: string;
     };
 }
 
-export interface ViolationDetail {
-    regulation: string; // Specific reg violated (e.g., 'gdpr')
-    ruleId: string; // Internal rule identifier
-    severity: 'low' | 'medium' | 'high' | 'critical';
-    description: string; // Human-readable explanation
-    affectedFields: string[]; // Data fields involved (e.g., ['email', 'phone'])
-    remediation: string; // Suggested fix (e.g., 'Anonymize PII')
-    recordIndex?: number; // Index of violating record in batch
+/** Final output after privacy-engine (FHE/ZK proof attached) */
+export interface WeaveOutput {
+    data: Record<string, any>[];
+    proof?: {
+        zk?: any;     // snarkjs proof + public signals
+        fhe?: any;    // encrypted payload metadata
+    };
+    metadata: {
+        weaveId: string;
+        generatedAt: string;
+        requestId: string;
+        complianceReport: ComplianceReport;
+    };
 }
 
-export interface ComplianceReport {
-    compliant: boolean; // Overall compliance status
-    violations: ViolationDetail[]; // Detailed array of issues
-    checkedAt: string; // ISO timestamp of check
-    score: number; // Compliance score (0-100)
-    recommendations?: string[]; // Optional overall suggestions
+/** Event payloads – consumed by Dapr pub/sub */
+export interface WeaveCompletedEvent {
+    output: WeaveOutput;
+    report: ComplianceReport;
+    userId: string;
+    requestId: string;
 }
+
+export interface WeaveFailedEvent {
+    error: string;
+    userId: string;
+    requestId: string;
+    timestamp: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Re-export everything for convenience
+// ─────────────────────────────────────────────────────────────────────────────
+// export type {
+//     WeaveInput,
+//     ComplianceReport,
+//     SynthGenResponse,
+//     WeaveOutput,
+//     WeaveCompletedEvent,
+//     WeaveFailedEvent,
+//     ViolationDetail,
+// };

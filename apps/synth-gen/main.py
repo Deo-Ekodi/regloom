@@ -84,6 +84,18 @@ async def dapr_config():
 # ================================
 @app.get("/healthz")
 async def healthz():
+    # logger.debug('Healthz check endpoint accessed.');
+    return {
+        "status": "healthy",
+        "service": "regloom-synth-gen",
+        "version": "0.2.0",
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "dapr_port": os.getenv("DAPR_SYNTH_GEN_HTTP_PORT", "3503"),
+    }
+
+@app.get("/health")
+async def health():
+    # logger.debug('Health check endpoint accessed.');
     return {
         "status": "healthy",
         "service": "regloom-synth-gen",

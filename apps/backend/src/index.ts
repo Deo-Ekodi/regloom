@@ -24,7 +24,7 @@ logger.info('Express middleware configured (JSON, URL-encoded, Tracing).');
 // Public health check — MUST be before auth middleware
 app.get('/health', (_req, res) => {
   // logger.info('Health check endpoint accessed.');
-  // logger.debug('Responding to health check request.');
+  // logger.debug('Health check endpoint accessed.');
   res.status(200).json({
     status: 'healthy',
     service: 'regloom-backend',

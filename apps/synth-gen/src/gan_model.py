@@ -5,12 +5,16 @@
 # configurable epochs/batch, error handling. Integrates with pipeline for weave step.
 
 
+# Updated: Add metadata-driven fitting (for future SDV/CTGAN if added). 
+# Enhance gaussian fallback with PII anonymization (hash sensitive values). No new deps.
+
 import logging
 import math
 import traceback
-from typing import Optional
+from typing import Optional, Dict, Any
 import pandas as pd
 import numpy as np
+import hashlib  # Standard lib for hashing
 from .logger import logger
 
 # Local modules
@@ -30,7 +34,7 @@ except Exception:
 try:
     # sdv offers TVAE, GaussianCopula etc.
     import sdv
-    from sdv.tabular import TVAE, GaussianCopula, CopulaGAN
+    from sdv.single_table import TVAESynthesizer, GaussianCopulaSynthesizer, CTGANSynthesizer  # Updated to new SDV API (assuming v1.0+ if installed)
     HAS_SDV = True
 except Exception:
     logger.info("SDV not available; TVAE/Copula models disabled")
@@ -102,10 +106,20 @@ def _postprocess_dtypes(real_df: pd.DataFrame, synth_df: pd.DataFrame) -> pd.Dat
             out[col] = out[col].astype(str)
     return out
 
+def _anonymize_sensitive(synth_df: pd.DataFrame, metadata: Dict[str, Any]) -> pd.DataFrame:
+    """Pseudonymize sensitive columns (hash strings) to prevent PII leaks in fallbacks."""
+    sensitive_cols = [col for col, m in metadata["columns"].items() if m["sensitive_by_name"] or m["sensitive_by_content"]]
+    logger.info("Anonymizing sensitive columns to prevent leaks", sensitive_cols=sensitive_cols)
+    for col in sensitive_cols:
+        if synth_df[col].dtype == object or synth_df[col].dtype == "string":
+            synth_df[col] = synth_df[col].astype(str).apply(lambda x: hashlib.sha256(x.encode()).hexdigest()[:16] if x else x)
+    return synth_df
+
 def generate_synth(real_data: pd.DataFrame, num_samples: int, epochs: int = 100, batch_size: int = 500) -> pd.DataFrame:
     """
     Orchestrator: auto-detect schema, choose model, train, sample, validate, fallback.
     Keeps the same signature as before.
+    Updated: Use SDV metadata if available; anonymize on fallback.
     """
     try:
         if not isinstance(real_data, pd.DataFrame):
@@ -149,30 +163,38 @@ def generate_synth(real_data: pd.DataFrame, num_samples: int, epochs: int = 100,
         else:
             candidates = [family, "ctgan", "gaussian_copula"]
 
+        sdv_metadata = None
+        if HAS_SDV:
+            from sdv.metadata import SingleTableMetadata
+            sdv_metadata = SingleTableMetadata()
+            sdv_metadata.detect_from_dataframe(real_data)
+            logger.debug("SDV metadata detected for model fitting")
+
         for cand in candidates:
             try:
                 logger.info("AutoSynth: attempting candidate", candidate=cand)
                 if cand == "ctgan":
-                    if HAS_CTG:
-                        model = CTGAN(epochs=epochs, batch_size=batch_size, verbose=True)
+                    if HAS_SDV:
+                        model = CTGANSynthesizer(metadata=sdv_metadata, epochs=epochs, batch_size=batch_size)
                         model.fit(real_data)
                         synth_df = model.sample(num_samples)
-                    elif HAS_SDV:
-                        model = CopulaGAN(epochs=epochs, batch_size=batch_size)
+                    elif HAS_CTG:
+                        discrete = [col for col, m in metadata["columns"].items() if m["is_categorical"] or m["is_text"] or m["is_datetime"]]
+                        model = CTGAN(epochs=epochs, batch_size=batch_size, verbose=True, discrete_columns=discrete)
                         model.fit(real_data)
                         synth_df = model.sample(num_samples)
                     else:
-                        raise RuntimeError("CTGAN and Copula GAN not available")
+                        raise RuntimeError("CTGAN not available")
                 elif cand == "tvae":
                     if HAS_SDV:
-                        model = TVAE(epochs=epochs, batch_size=batch_size)
+                        model = TVAESynthesizer(metadata=sdv_metadata, epochs=epochs, batch_size=batch_size)
                         model.fit(real_data)
                         synth_df = model.sample(num_samples)
                     else:
                         raise RuntimeError("TVAE not available")
                 elif cand == "gaussian_copula":
                     if HAS_SDV:
-                        model = GaussianCopula()
+                        model = GaussianCopulaSynthesizer(metadata=sdv_metadata)
                         model.fit(real_data)
                         synth_df = model.sample(num_samples)
                     else:
@@ -184,6 +206,8 @@ def generate_synth(real_data: pd.DataFrame, num_samples: int, epochs: int = 100,
                             std = real_data[c].std() if real_data[c].std() > 0 else 1.0
                             noise = np.random.normal(scale=0.01*std, size=len(synth_df))
                             synth_df[c] = synth_df[c].astype(float) + noise
+                        # Anonymize to prevent leaks
+                        synth_df = _anonymize_sensitive(synth_df, metadata)
                 else:
                     raise RuntimeError(f"Unknown candidate model {cand}")
 

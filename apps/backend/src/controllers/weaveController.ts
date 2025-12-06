@@ -39,12 +39,16 @@ export async function handleWeave(req: Request, res: Response) {
         }
 
         // Synthesize
+        // const synthResponse = await axios.post(`${synthGenUrl}/synthesize`, { data: input.data }, { timeout: 60000 });
+        // const synthData = synthResponse.data;
         const synthResponse = await axios.post(`${synthGenUrl}/synthesize`, { data: input.data }, { timeout: 60000 });
-        const synthData = synthResponse.data;
+        const synthDataArray = synthResponse.data.synthetic_data; // Array
 
         // Apply privacy
-        const privacyResponse = await axios.post(`${privacyEngineUrl}/process`, { data: synthData }, { timeout: 30000 });
-        const processedData = privacyResponse.data;
+        // const privacyResponse = await axios.post(`${privacyEngineUrl}/process`, { data: synthData }, { timeout: 30000 });
+        // const processedData = privacyResponse.data;
+        const privacyResponse = await axios.post(`${privacyEngineUrl}/process`, { data: synthDataArray }, { timeout: 30000 });
+        const processedData = privacyResponse.data.processedData;
 
         // Publish completion
         await publishEvent('weave-completed', { output: processedData, report, userId: input.userId });

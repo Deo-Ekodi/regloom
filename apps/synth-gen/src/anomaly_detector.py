@@ -49,7 +49,14 @@ def detect_pii(data: pd.DataFrame, language: str = "en", confidence_threshold: f
                     res = engine.analyze(text=val, language=language)
                     for r in res:
                         if getattr(r, "score", 1.0) >= confidence_threshold:
-                            pii_detections.append({"row": int(idx), "column": col, "value": val, "entity": r.type, "score": getattr(r, "score", 1.0)})
+                            pii_detections.append({
+                                "row": int(idx),
+                                "column": col,
+                                "value": val,
+                                "entity": r.entity_type,
+                                "score": r.score
+                            })
+                            # pii_detections.append({"row": int(idx), "column": col, "value": val, "entity": r.type, "score": getattr(r, "score", 1.0)})
             return pii_detections
         except Exception as e:
             logger.warning("Presidio detection failed, falling back", exc_info=True)

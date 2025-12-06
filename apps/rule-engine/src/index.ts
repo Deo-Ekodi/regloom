@@ -17,7 +17,7 @@ const PORT = process.env.RULE_ENGINE_PORT || 4001;
 // Health check (for k8s probes/Dapr)
 app.get('/health', (_req, res) => {
   // logger.info('Health check endpoint accessed.');
-  // logger.debug('Responding to health check request.');
+  // logger.debug('Health check endpoint accessed.');
   res.status(200).json({
     status: 'healthy',
     service: 'regloom-rule-engine',
