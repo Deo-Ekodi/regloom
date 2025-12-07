@@ -1,5 +1,5 @@
 # apps/privacy-engine/Dockerfile
-# Killer: Survives timeouts, caches store forever, offline after first build
+# Survives timeouts, caches store forever, offline after first build
 # Requires BuildKit (export DOCKER_BUILDKIT=1; already on in your compose)
 
 FROM node:20-alpine AS base

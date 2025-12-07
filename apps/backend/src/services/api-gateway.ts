@@ -2,7 +2,7 @@
 // Central routing and validation service for the backend API.
 // Defines Express routes for core endpoints like auth, ingestion, and weaving.
 // Integrates authentication middleware and input validation using Zod schemas.
-// Ensures all incoming requests are routed securely and validated before reaching controllers.
+
 import { Application, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
@@ -10,8 +10,9 @@ import fs from 'fs/promises';
 import path from 'path';
 import authMiddleware from '../middlewares/auth';
 import { handleWeave } from '../controllers/weaveController'; // Corrected import (named)
-import { ingest } from './ingestion'; // Corrected import (named)
+import { ingest } from '../services/ingestion'; // Corrected import (named)
 import { logger } from '@regloom/utils';
+import { WeaveInput } from '@regloom/types';
 
 // Configure multer for file uploads (temp storage in secure dir)
 const upload = multer({
@@ -26,17 +27,16 @@ import { loginSchema, registerSchema } from './auth';
 const ingestionSchema = z.object({
     source: z.string().min(1, 'Source required').default('csv'),
     regulations: z.array(z.string()).optional(), // Made optional as not directly used in ingest call
-    // Note: Other connector-specific params (like 'delimiter' or 'objectType') would go here too
+    // Note: Other connector-specific params (like 'delimiter' or 'sheet' for sheet) would go here too
 });
 
 // Weave schema based on shared types (fully defined to match WeaveInput interface)
 const weaveSchema = z.object({
-    data: z.array(z.record(z.string(), z.any())), // Batch array of records
-    regulations: z.array(z.string()),
-    userId: z.string(),
-    timestamp: z.string(),
     source: z.string(),
     connectorParams: z.record(z.string(), z.any()).optional(),
+    regulations: z.array(z.string()),
+    userId: z.string(),
+    timestamp: z.string().optional().default(new Date().toISOString()),
     options: z.object({
         maxRows: z.number().optional(),
         dryRun: z.boolean().optional(),
@@ -52,7 +52,7 @@ const validate = (schema: z.ZodSchema) => (req: Request, res: Response, next: Ne
         next();
     } catch (err) {
         if (err instanceof z.ZodError) {
-            logger.warn(`Validation error: ${err.message}`, { issues: err.issues, path: req.path }); // WARNING: Validation failure
+            logger.warn(`Validation error: ${err.message}`, { issues: err.issues, path: req.path }); // WARNING: Limit validation failure
             return res.status(400).json({ error: 'Invalid input', details: err.issues });
         }
         logger.error(`Unexpected validation middleware error: ${(err as Error).message}`, { stack: (err as Error).stack, path: req.path }); // ERROR: Unhandled exception in middleware
@@ -98,24 +98,23 @@ export default function setupApiGateway(app: Application) {
     app.use(authMiddleware);
     logger.info('Auth middleware applied to subsequent routes.'); // INFO: Middleware applied
 
-    // Ingestion route (now handles file upload for 'csv' and uses generic 'ingest')
+    // Ingestion route (handles file upload for 'csv'/'excel' and uses generic 'ingest')
     app.post('/ingest', upload.single('file'), validate(ingestionSchema), async (req: Request, res: Response, next: NextFunction) => {
         logger.info('Route hit: /ingest'); // INFO: Route hit
         // 1. Get validated body data
         const { source, regulations } = req.body;
         logger.debug(`Ingestion attempt initiated. Source: ${source}`); // DEBUG: Start ingestion
 
-        // 2. Check for required file if source is 'csv' (or similar file-based sources)
-        // We assume file upload is only necessary for CSV for simplicity
-        if (source === 'csv' && !req.file) {
-            logger.warn(`No file uploaded for file-based ingestion: ${source}`); // WARNING: Missing file
+        // 2. Check for required file if source is 'csv' or 'excel'
+        if (['csv', 'excel'].includes(source) && !req.file) {
+            logger.warn(`No file uploaded for file-based ingestion: ${source}`); // WARNING: Limit missing file
             return res.status(400).json({ error: `File required for ${source} ingestion` });
         }
 
         // 3. Prepare parameters for the generic 'ingest' function
         const ingestionParams: Record<string, any> = { ...req.body };
 
-        // Add filePath to params if a file was uploaded (for CSV connector)
+        // Add filePath to params if a file was uploaded (for CSV/Excel connector)
         let filePath: string | undefined;
         if (req.file) {
             filePath = req.file.path;
@@ -150,7 +149,6 @@ export default function setupApiGateway(app: Application) {
 
             // Attempt to clean up the file on failure
             if (filePath) {
-                // IMPORTANT: The existing code uses logger.warn for cleanup failure, which is appropriate.
                 await fs.unlink(filePath).catch((unlinkErr) => logger.warn(`Failed to clean up file: ${unlinkErr.message}`));
             }
 
@@ -158,11 +156,93 @@ export default function setupApiGateway(app: Application) {
         }
     });
 
-    // Weave route
-    app.post('/weave', validate(weaveSchema), (req: Request, res: Response) => {
+    // Weave route (now supports multipart file upload if source is 'csv'/'excel')
+    app.post('/weave', upload.single('file'), async (req: Request, res: Response, next: NextFunction) => {
         logger.info('Route hit: /weave'); // INFO: Route hit
-        handleWeave(req, res);
-        logger.debug('Weave process dispatched to controller.'); // DEBUG: Controller dispatch
+        // 1. Get validated body data
+        let { source, regulations, userId, timestamp, connectorParams, options } = req.body;
+
+        // 2. Parse JSON strings from multipart form-data
+        try {
+            if (typeof regulations === 'string') regulations = JSON.parse(regulations);
+            if (typeof connectorParams === 'string') connectorParams = JSON.parse(connectorParams);
+            if (typeof options === 'string') options = JSON.parse(options);
+        } catch (err) {
+            logger.warn(`Failed to parse JSON field: ${(err as Error).message}`);
+            return res.status(400).json({ error: 'Invalid JSON in form field' });
+        }
+
+        logger.debug(`Weave attempt initiated. Source: ${source}`); // DEBUG: Start weave
+
+        // 3. Check for required file if source is 'csv' or 'excel'
+        if (['csv', 'excel'].includes(source) && !req.file) {
+            logger.warn(`No file uploaded for file-based weave: ${source}`); // WARNING: Missing file
+            return res.status(400).json({ error: `File required for ${source} weave` });
+        }
+
+        // 4. Validate parsed body with schema
+        try {
+            weaveSchema.parse({ source, connectorParams, regulations, userId, timestamp, options });
+        } catch (err) {
+            if (err instanceof z.ZodError) {
+                logger.warn(`Validation error: ${err.message}`, { issues: err.issues });
+                return res.status(400).json({ error: 'Invalid input', details: err.issues });
+            }
+            logger.error(`Unexpected validation error: ${(err as Error).message}`);
+            return res.status(500).json({ error: 'Internal validation error' });
+        }
+
+        // 5. Prepare input for weave
+        let input: WeaveInput = {
+            source,
+            regulations,
+            userId,
+            timestamp,
+            connectorParams: connectorParams || {},
+            options: options || {},
+            data: [], // Will be populated if source != 'direct'
+        };
+
+        // 6. Ingest data if source != 'direct'
+        if (source !== 'direct') {
+            logger.debug('Ingesting data for weave...');
+            if (req.file) {
+                if (!input.connectorParams) input.connectorParams = {};
+                input.connectorParams.filePath = req.file.path;
+            }
+            input.data = await ingest(source, input.connectorParams!, input.options!);
+            logger.debug(`Ingested ${input.data.length} records for weave`);
+        } else if (req.body.data) {
+            // FIX HERE: Skip JSON.parse if the body was already parsed by express.json()
+            if (Array.isArray(req.body.data)) {
+                // Data is already a parsed array from the express.json() middleware
+                input.data = req.body.data;
+            } else if (typeof req.body.data === 'string') {
+                // Fallback for multipart/form-data where 'data' might still be a JSON string
+                try {
+                    input.data = JSON.parse(req.body.data);
+                } catch (err) {
+                    logger.warn(`Failed to parse data field: ${(err as Error).message}`);
+                    return res.status(400).json({ error: 'Invalid JSON in data field' });
+                }
+            } else {
+                logger.warn('Direct source data is neither a parsed array nor a JSON string.', { dataType: typeof req.body.data });
+                return res.status(400).json({ error: 'Invalid data format for direct source' });
+            }
+        }
+
+
+        try {
+            // 7. Call handleWeave with input
+            await handleWeave({ body: input } as Request, res);
+            logger.debug('Weave process dispatched to controller.');
+        } catch (err) {
+            if (req.file) {
+                await fs.unlink(req.file.path).catch(() => { });
+            }
+            logger.error(`Weave error: ${(err as Error).message}`, { stack: (err as Error).stack });
+            res.status(500).json({ error: 'Weave failed', details: (err as Error).message });
+        }
     });
 
     logger.info('API Gateway routes configured');

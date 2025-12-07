@@ -1,14 +1,14 @@
-// // apps/backend/src/services/event-bus.ts
-// // PRODUCTION-GRADE Dapr Event Bus for RegLoom
-// // Features:
-// // • Automatic retries with exponential backoff
-// // • Dead-letter queue (DLQ)
-// // • Correlation ID + Trace Propagation
-// // • Health checks
-// // • Bulk publish
-// // • Type-safe event contracts
-// // • Full logging + OpenTelemetry ready
-// // • Zero runtime errors. 100% typed.
+// apps/backend/src/services/event-bus.ts
+// PRODUCTION-GRADE Dapr Event Bus for RegLoom
+// Features:
+// • Automatic retries with exponential backoff
+// • Dead-letter queue (DLQ)
+// • Correlation ID + Trace Propagation
+// • Health checks
+// • Bulk publish
+// • Type-safe event contracts
+// • Full logging + OpenTelemetry ready
+// • Zero runtime errors. 100% typed.
 
 import { DaprClient, CommunicationProtocolEnum } from '@dapr/dapr';
 import { v4 as uuidv4 } from 'uuid';

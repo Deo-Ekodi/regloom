@@ -8,9 +8,8 @@
 import { Request, Response } from 'express';
 import { axios } from '@regloom/utils';
 import { WeaveInput, ComplianceReport, SynthGenResponse } from '@regloom/types';
-// import { asyncLocalStorage, logger } from '@regloom/utils';
 import { getRequestId, getUserId, logger } from '@regloom/utils';
-
+import fs from 'fs/promises';
 import { publishEvent } from '../services/event-bus';
 import { ingest } from '../services/ingestion';
 
@@ -98,7 +97,18 @@ export async function handleWeave(req: Request, res: Response) {
 
         logger.info('Weave completed successfully', { requestId });
         res.json({ output: processedOutput, report });
+
+        // On success, clean up file
+        if (req.file) {
+            await fs.unlink(req.file.path).catch(() => { });
+            logger.debug('Temporary file cleaned up after successful weave', { requestId });
+        }
     } catch (err: any) {
+        // Clean up uploaded file on any error
+        if (req.file) {
+            await fs.unlink(req.file.path).catch(() => { });
+            logger.debug('Temporary file cleaned up after weave error', { requestId });
+        }
         const errorMsg = err.response?.data?.error || err.message || 'Unknown error';
         logger.error('Weave failed', {
             requestId,

@@ -107,11 +107,28 @@ if (!isTest) {
 // ──────────────────────────────────────────────────────────────
 // Logger instance
 // ──────────────────────────────────────────────────────────────
-const logger: WinstonLogger = winston.createLogger({
-    level: logLevel,
+const logger = winston.createLogger({
+    levels: {
+        emerg: 0,
+        alert: 1,
+        crit: 2,
+        error: 3,
+        warn: 4,
+        notice: 5,
+        info: 6,
+        debug: 7,
+    },
     transports: transportList,
     exitOnError: false,
 });
+
+logger.emerg = logger.log.bind(logger, 'emerg');
+
+// const logger: WinstonLogger = winston.createLogger({
+//     level: logLevel,
+//     transports: transportList,
+//     exitOnError: false,
+// });
 
 // ──────────────────────────────────────────────────────────────
 // Startup logs — NOW SAFE: no context needed, no warning trigger

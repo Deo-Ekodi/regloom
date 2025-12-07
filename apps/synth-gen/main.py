@@ -29,6 +29,9 @@ from src.gan_model import generate_synth
 from src.anomaly_detector import detect_pii, detect_bias
 from src.logger import logger, run_with_request_context
 
+import logging
+logging.getLogger("faker").setLevel(logging.ERROR)
+
 # ================================
 # LIFESPAN: Graceful startup/shutdown
 # ================================

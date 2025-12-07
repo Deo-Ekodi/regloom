@@ -4,6 +4,7 @@
 # General-purpose: Scans text fields for PII, computes bias if sensitive/target cols provided.
 # Production-grade: Handles missing cols gracefully, encodes data, thresholds for warnings.
 
+import logging
 import pandas as pd
 import numpy as np
 from .logger import logger
@@ -27,6 +28,10 @@ from typing import List, Dict, Any
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import mutual_info_score
 import re
+
+
+logging.getLogger("presidio-analyzer").setLevel(logging.ERROR)
+logging.getLogger("presidio-anonymizer").setLevel(logging.ERROR)
 
 SIMPLE_PII_PATTERNS = {
     "email": re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),

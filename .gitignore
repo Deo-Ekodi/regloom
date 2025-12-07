@@ -38,3 +38,4 @@ htmlcov/
 *.xml
 
 .pnpm-store
+.vscode/

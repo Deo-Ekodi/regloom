@@ -1,16 +1,16 @@
-// apps/backend/src/services/ingestion.ts
-// Upgraded data ingestion service for RegLoom backend.
-// Supports modular connectors (e.g., CSV, HubSpot) via a registry for easy extension.
-// Handles large datasets streaming, security (path traversal prevention), data cleaning, limits.
-// Logs progress/errors. Scalable: Add new connectors by registering functions.
-// Uses csv-parse for CSV, @hubspot/api-client for HubSpot with pagination.
-// Prod-grade: Type-safe, async, error classes, env-configurable.
+// // apps/backend/src/services/ingestion.ts
+// // Upgraded data ingestion service for RegLoom backend.
+// // Supports modular connectors (e.g., CSV, HubSpot) via a registry for easy extension.
+// // Handles large datasets streaming, security (path traversal prevention), data cleaning, limits.
+// // Logs progress/errors. Scalable: Add new connectors by registering functions.
+// // Uses csv-parse for CSV, @hubspot/api-client for HubSpot with pagination.
+// // Prod-grade: Type-safe, async, error classes, env-configurable.
 
 import * as fs from 'fs'; // For createReadStream
 import fsp from 'fs/promises'; // For access/unlink
 import path from 'path';
 import { parse } from 'csv-parse';
-// import { Client as HubSpotClient } from '@hubspot/api-client';
+import xlsx from 'xlsx';
 import { logger } from '@regloom/utils';
 import { WeaveInput } from '@regloom/types';
 
@@ -111,63 +111,59 @@ connectors.set('csv', async (params, options = {}) => {
             logger.error(accessErr.message, { cause: accessErr.cause?.message }); // ERROR: File access
             throw accessErr;
         }
-        // This catch block handles unexpected pre-ingest errors (e.g., config/setup issues)
         logger.emerg(`CSV pre-ingest FATAL error: ${(err as Error).message}`); // EMERG: Unexpected fatal error
         throw new IngestionError(`Ingestion failed: ${(err as Error).message}`, err as Error);
     }
 });
 
-// Register HubSpot connector (uses private app token for auth)
-// connectors.set('hubspot', async (params, options = {}) => {
-//     const { objectType = 'contacts', properties = [] } = params;
-//     if (!HUBSPOT_ACCESS_TOKEN) {
-//         const error = new ConnectorError('HUBSPOT_ACCESS_TOKEN env required');
-//         logger.error(error.message); // ERROR: Missing token
-//         throw error;
-//     }
-//     if (!objectType) {
-//         const error = new ConnectorError('objectType required for HubSpot');
-//         logger.error(error.message); // ERROR: Missing object type
-//         throw error;
-//     }
+// Register Excel connector
+connectors.set('excel', async (params, options = {}) => {
+    const { filePath, sheet = 0 } = params;
+    if (!filePath) {
+        throw new ConnectorError('filePath required for Excel');
+    }
+    const safeFilePath = getSafePath(filePath);
+    const startTime = Date.now();
+    logger.debug(`Excel ingestion starting: ${safeFilePath}`, { sheet, options });
 
-//     const hubspot = new HubSpotClient({ accessToken: HUBSPOT_ACCESS_TOKEN });
-//     const effectiveMaxRows = options.maxRows ?? DEFAULT_MAX_ROWS;
-//     const data: Record<string, any>[] = [];
-//     let after: string | undefined;
-//     let fetched = 0;
+    const effectiveMaxRows = options.maxRows ?? DEFAULT_MAX_ROWS;
+    const data: Record<string, any>[] = [];
 
-//     logger.debug(`HubSpot ingestion starting for: ${objectType}`, { properties }); // DEBUG: Starting HubSpot
+    try {
+        await fsp.access(safeFilePath, fs.constants.R_OK);
 
-//     try {
-//         while (true) {
-//             logger.debug(`HubSpot fetching next page, fetched: ${fetched}, after: ${after}`); // DEBUG: Pagination
+        const workbook = xlsx.readFile(safeFilePath);
+        const sheetName = typeof sheet === 'number' ? workbook.SheetNames[sheet] : sheet;
+        if (!sheetName) {
+            throw new ParsingError('Invalid sheet name or index');
+        }
+        const worksheet = workbook.Sheets[sheetName];
+        const json = xlsx.utils.sheet_to_json(worksheet, { header: 1, defval: null, blankrows: false });
 
-//             const response = await hubspot.crm[objectType].basicApi.getPage(100, after, properties, undefined, false);
-//             const results = response.results || [];
+        // Skip header row, limit rows
+        let rowCount = 0;
+        const headers = json[0] as string[];
+        for (let i = 1; i < json.length; i++) {
+            rowCount++;
+            if (rowCount > effectiveMaxRows) {
+                throw new LimitExceededError(`Max rows: ${effectiveMaxRows}`);
+            }
+            const row = json[i] as any[];
+            const obj: Record<string, any> = {};
+            headers.forEach((header, idx) => {
+                obj[header] = row[idx];
+            });
+            data.push(obj);
+        }
 
-//             for (const item of results) {
-//                 if (fetched >= effectiveMaxRows) {
-//                     logger.warn(`HubSpot limit hit: ${effectiveMaxRows}`); // WARN: Limit hit
-//                     throw new LimitExceededError(`Max rows: ${effectiveMaxRows}`);
-//                 }
-//                 data.push(item.properties); // Extract properties as flat record
-//                 fetched++;
-//             }
-
-//             if (!response.paging?.next?.after) break;
-//             after = response.paging.next.after;
-//         }
-
-//         logger.info(`HubSpot ingested: ${fetched} records from ${objectType}`); // INFO: Completion
-//         return data;
-//     } catch (err) {
-//         if (err instanceof LimitExceededError) throw err; // Re-throw limit error
-
-//         logger.error(`HubSpot API error: ${(err as Error).message}`, { stack: (err as Error).stack }); // ERROR: API failure
-//         throw new ConnectorError(`HubSpot failed: ${(err as Error).message}`, err as Error);
-//     }
-// });
+        const duration = (Date.now() - startTime) / 1000;
+        logger.info(`Excel ingested: ${rowCount} rows in ${duration}s`, { safeFilePath, sheet: sheetName });
+        return data;
+    } catch (err) {
+        logger.error(`Excel parse error: ${(err as Error).message}`, { stack: (err as Error).stack });
+        throw new ParsingError(`Parse failed: ${(err as Error).message}`, err as Error);
+    }
+});
 
 // Main ingestion function (dispatches to connector)
 
@@ -184,12 +180,7 @@ export async function ingest(source: string, params: Record<string, any>, option
         logger.debug(`Ingestion dispatch complete for ${source}`); // DEBUG: Dispatch complete
         return result;
     } catch (err) {
-        // Re-log the general failure at the dispatch level
         logger.emerg(`Ingestion failed at dispatch level: ${(err as Error).message}`); // EMERG: Top-level failure
         throw err;
     }
 }
-
-// Usage example (for docs):
-// await ingest('csv', { filePath: 'data.csv' });
-// await ingest('hubspot', { objectType: 'contacts', properties: ['email', 'firstname'] });`

@@ -1,5 +1,5 @@
 # apps/rule-engine/Dockerfile
-# Killer: Survives timeouts, caches store forever, offline after first build
+# Survives timeouts, caches store forever, offline after first build
 # Requires BuildKit (export DOCKER_BUILDKIT=1; already on in your compose)
 
 FROM node:20-alpine AS base
@@ -88,9 +88,6 @@ COPY --from=installer --chown=node:node /app/packages ./packages
 COPY --from=installer --chown=node:node /app/pnpm-lock.yaml ./
 COPY --from=installer --chown=node:node /app/pnpm-workspace.yaml ./
 COPY --from=installer --chown=node:node /app/tsconfig.json ./
-
-# Copy source (overlaid by dev volume)
-# COPY --chown=node:node apps/rule-engine ./apps/rule-engine
 
 EXPOSE 4001
 

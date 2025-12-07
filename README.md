@@ -226,3 +226,45 @@ This represents the current, generated file and directory layout:
 
 ```
 ```
+
+curl -X POST http://localhost:4000/ingest \
+  -H "Authorization: Bearer $(curl -s -X POST http://localhost:4000/auth/dev-login -d '{"email":"admin@regloom.dev"}' | jq -r .access_token)" \
+  -F "file=@customers.csv" \
+  -F "source=csv"
+
+curl -X POST http://localhost:4000/weave \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(curl -s -X POST http://localhost:4000/auth/dev-login -d '{"email":"admin@regloom.dev"}' | jq -r .access_token)" \
+  -d "{
+    \"data\": [
+      {\"customer_id\": \"CUST-001\", \"age\": 28, \"gender\": \"Female\", \"salary\": 65000, \"email\": \"jane@corp.com\"},
+      {\"customer_id\": \"CUST-002\", \"age\": 45, \"gender\": \"Male\", \"salary\": 110000, \"email\": \"john@corp.com\"}
+    ],
+    \"regulations\": [\"gdpr\", \"ccpa\"],
+    \"userId\": \"admin-dev\",
+    \"timestamp\": \"2025-12-05T18:00:00Z\",
+    \"source\": \"direct\"
+  }"
+
+curl -X POST http://localhost:4000/weave \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(curl -s -X POST http://localhost:4000/auth/dev-login -d '{"email":"admin@regloom.dev"}' | jq -r .access_token)" \
+  -d '{
+    "source": "csv",
+    "connectorParams": { "filePath": "uploads/customers.csv" },
+    "regulations": ["kenya_dpa", "gdpr"],
+    "userId": "user123",
+    "timestamp": "2025-12-07T10:00:00Z"
+  }'
+
+
+curl -X POST http://localhost:4000/weave \
+  -H "Authorization: Bearer $(curl -s -X POST http://localhost:4000/auth/dev-login -d '{"email":"admin@regloom.dev"}' | jq -r .access_token)" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@customers.csv" \
+  -F "source=csv" \
+  -F "connectorParams={\"delimiter\":\",\"}" \
+  -F "regulations=[\"kenya_dpa\",\"gdpr\"]" \
+  -F "userId=dummyUser123" \
+  -F "timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+  -F "options={\"maxRows\":1000,\"dryRun\":false}"
