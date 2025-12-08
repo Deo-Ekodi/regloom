@@ -7,7 +7,7 @@
 
 // react-hook-form?
 import { WeaveOutput } from '@regloom/types';
-import { logger } from '@regloom/utils';
+import { browserLogger as logger } from '@regloom/utils/browser'
 
 interface ReportViewerProps {
     report: WeaveOutput['metadata']['complianceReport'];

@@ -2,6 +2,10 @@
   "name": "@regloom/utils",
   "version": "0.0.1",
   "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./browser": "./src/browser.ts"
+  },
   "dependencies": {
     "axios": "^1.13.2",
     "express": "^5.2.1",

@@ -10,7 +10,7 @@
 import axios from 'axios'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { WeaveInput, WeaveOutput } from '@regloom/types'
-import { logger } from '@regloom/utils'
+import { browserLogger as logger } from '@regloom/utils/browser'
 
 const BACKEND_URL = process.env.VITE_BACKEND_BASE_URL || 'http://localhost:4000'
 

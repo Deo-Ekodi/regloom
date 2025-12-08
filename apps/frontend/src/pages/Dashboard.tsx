@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useWeaves } from '../api/client'
 import { format } from 'date-fns'
 import { Activity, Shield, FileText, Sparkles } from 'lucide-react'
+import { browserLogger as logger } from '@regloom/utils/browser'
 
 export default function Dashboard() {
     const { data: weaves = [], isLoading } = useWeaves()

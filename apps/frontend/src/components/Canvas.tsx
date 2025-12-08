@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Stage, Layer, Rect, Text } from 'react-konva';
-import { logger } from '@regloom/utils';
+import { browserLogger as logger } from '@regloom/utils/browser'
 
 const Canvas: React.FC = () => {
     const handleDragStart = (e: any) => {

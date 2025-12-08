@@ -17,6 +17,7 @@
     "@supabase/supabase-js": "latest",
     "@tanstack/react-query": "^5.90.12",
     "axios": "^1.13.2",
+    "date-fns": "^4.1.0",
     "konva": "^10.0.12",
     "react": "latest",
     "react-dom": "latest",

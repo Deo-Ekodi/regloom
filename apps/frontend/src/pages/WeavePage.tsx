@@ -8,7 +8,7 @@
 import { useForm } from 'react-hook-form';
 import { useSubmitWeave } from '../api/client.ts';
 import { WeaveInput } from '@regloom/types';
-import { logger } from '@regloom/utils';
+import { browserLogger as logger } from '@regloom/utils/browser'
 import Canvas from '../components/Canvas.tsx'; // For visual preview
 
 const WeavePage: React.FC = () => {

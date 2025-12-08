@@ -4,7 +4,8 @@
 /* Ensures consistent, responsive UI across components. */
 /* ───────────────────────────────────────────────────────────────────────────── */
 
-/* apps/frontend/src/index.css */
+@reference "tailwindcss";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
