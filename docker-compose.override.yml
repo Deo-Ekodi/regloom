@@ -1,17 +1,16 @@
 # docker-compose.override.yml
 services:
-  # frontend: (uncomment when ready)
-  # frontend:
-  #   volumes:
-  #     - .:/app
-  #     - /app/node_modules
-  #     - ./logs:/logs
-  #   environment:
-  #     - SERVICE_NAME=frontend
-  #     - LOG_LEVEL=debug
-  #     - LOG_DIR=/logs
-  #     - NODE_ENV=development
-  #   command: pnpm --filter @regloom/frontend dev
+  frontend:
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - ./logs:/logs
+    environment:
+      - SERVICE_NAME=frontend
+      - LOG_LEVEL=debug
+      - LOG_DIR=/logs
+      - NODE_ENV=development
+    command: pnpm --filter @regloom/frontend dev
 
   backend:
     volumes:

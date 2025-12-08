@@ -1,0 +1,27 @@
+/* apps/frontend/src/index.css */
+/* ───────────────────────────────────────────────────────────────────────────── */
+/* Base Tailwind styles for the app. Imported in main.tsx. */
+/* Ensures consistent, responsive UI across components. */
+/* ───────────────────────────────────────────────────────────────────────────── */
+
+/* apps/frontend/src/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    body {
+        @apply bg-gradient-to-br from-slate-50 to-indigo-50 text-gray-900 min-h-screen;
+        font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    }
+}
+
+@layer components {
+    .btn-primary {
+        @apply bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-medium px-6 py-3 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200;
+    }
+
+    .card {
+        @apply bg-white rounded-xl shadow-md border border-gray-100 p-6 hover:shadow-lg transition-shadow;
+    }
+}
